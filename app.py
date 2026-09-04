@@ -525,20 +525,20 @@ if not df_creditos.empty:
                         )
 
                     with col_wa:
-                        nombre_base = cliente_pago.split()[0]
-                        # Plantilla exacta solicitada para notificación de pago
+                        # Utiliza directamente el nombre completo o diminutivo registrado en la BD para el trato cercano
+                        nombre_w = cliente_pago
                         msg_wa = (
-                            f"Hola *{nombre_base}* 😊 ¿Cómo estás?\n\n"
-                            f"Te escribo solo para confirmarte el registro de tu pago por *${valor_pago:,.0f} COP*. Cuando puedas, te agradezco que lo tengas presente. 🙌\n\n"
+                            f"Hola *{nombre_w}* 😊 ¿Cómo estás?\n\n"
+                            f"Te escribo solo para recordarte el pago pendiente de *${valor_pago:,.0f} COP*. Cuando puedas, te agradezco que lo tengas presente. 🙌\n\n"
                             f"Y cuando realices el pago, no olvides compartirnos el comprobante, porfa. 😊\n\n"
-                            f"¡Muchas gracias, {nombre_base}! 🤗"
+                            f"¡Muchas gracias, {nombre_w}! 🤗"
                         )
                         num_tel = "".join(filter(str.isdigit, str(telefono_cliente)))
                         if len(num_tel) == 10 and not num_tel.startswith("57"):
                             num_tel = "57" + num_tel
                         msg_enc = urllib.parse.quote(msg_wa)
                         
-                        st.link_button("💬 Enviar Resumen por WhatsApp", f"https://wa.me/{num_tel}?text={msg_enc}", use_container_width=True)
+                        st.link_button("💬 Enviar Recordatorio por WhatsApp", f"https://wa.me/{num_tel}?text={msg_enc}", use_container_width=True)
 
         st.markdown("---")
 
@@ -596,14 +596,14 @@ if not df_creditos.empty:
                                 if len(num_tel) == 10 and not num_tel.startswith("57"):
                                     num_tel = "57" + num_tel
                                 
-                                nombre_base = nombre_cli.split()[0]
+                                # Utiliza directamente el nombre guardado en la base (ej. "Caro")
+                                nombre_w = nombre_cli
                                 
-                                # Plantilla exacta solicitada para gestión de cobro
                                 msg_cobro = (
-                                    f"Hola *{nombre_base}* 😊 ¿Cómo estás?\n\n"
+                                    f"Hola *{nombre_w}* 😊 ¿Cómo estás?\n\n"
                                     f"Te escribo solo para recordarte el pago pendiente de *${val_pend:,.0f} COP*. Cuando puedas, te agradezco que lo tengas presente. 🙌\n\n"
                                     f"Y cuando realices el pago, no olvides compartirnos el comprobante, porfa. 😊\n\n"
-                                    f"¡Muchas gracias, {nombre_base}! 🤗"
+                                    f"¡Muchas gracias, {nombre_w}! 🤗"
                                 )
                                 msg_enc = urllib.parse.quote(msg_cobro)
                                 st.link_button("💬 Enviar Cobro WA", f"https://wa.me/{num_tel}?text={msg_enc}", use_container_width=True)
