@@ -23,10 +23,10 @@ def load_data():
         df_creditos = pd.read_excel(xls, sheet_name='Creditos')
         df_pagos = pd.read_excel(xls, sheet_name='Pagos')
         
-        # Limpieza básica
-        df_clientes.columns = df_clientes.columns.str.strip()
-        df_creditos.columns = df_creditos.columns.str.strip()
-        df_pagos.columns = df_pagos.columns.str.strip()
+        # Limpieza básica de nombres de columnas
+        df_clientes.columns = df_clientes.columns.str.strip().str.lower()
+        df_creditos.columns = df_creditos.columns.str.strip().str.lower()
+        df_pagos.columns = df_pagos.columns.str.strip().str.lower()
         
         return df_clientes, df_creditos, df_pagos
     except Exception as e:
@@ -48,6 +48,13 @@ opcion_menu = st.sidebar.radio(
 
 if df_clientes is not None and df_creditos is not None and df_pagos is not None:
 
+    # Mapeo flexible de nombres de columnas
+    col_capital = next((c for c in ['capital_inicial', 'monto_prestado', 'monto'] if c in df_creditos.columns), None)
+    col_pago = next((c for c in ['monto_pago', 'monto', 'valor_pago', 'pago'] if c in df_pagos.columns), None)
+    col_nombre = next((c for c in ['nombre', 'nombre_cliente', 'cliente'] if c in df_clientes.columns), None)
+    col_id_credito = next((c for c in ['credito_id', 'id_credito'] if c in df_creditos.columns), None)
+    col_id_cliente = next((c for c in ['cliente_id', 'id_cliente'] if c in df_clientes.columns), None)
+
     # =========================================================
     # 1. DASHBOARD GENERAL
     # =========================================================
@@ -56,13 +63,9 @@ if df_clientes is not None and df_creditos is not None and df_pagos is not None:
         st.markdown("---")
         
         # Cálculos de Métricas
-        capital_prestado = df_creditos['Monto_Prestado'].sum() if 'Monto_Prestado' in df_creditos.columns else 0
-        capital_pagado = df_pagos['Monto_Pago'].sum() if 'Monto_Pago' in df_pagos.columns else 0
-        
-        if 'Saldo_Pendiente' in df_creditos.columns:
-            saldo_pendiente = df_creditos['Saldo_Pendiente'].sum()
-        else:
-            saldo_pendiente = capital_prestado - capital_pagado
+        capital_prestado = df_creditos[col_capital].sum() if col_capital else 0
+        capital_pagado = df_pagos[col_pago].sum() if col_pago else 0
+        saldo_pendiente = max(0, capital_prestado - capital_pagado)
 
         col1, col2, col3 = st.columns(3)
         col1.metric("Capital Prestado Total", f"${capital_prestado:,.0f} COP")
@@ -77,7 +80,7 @@ if df_clientes is not None and df_creditos is not None and df_pagos is not None:
             st.subheader("Estado General de Cartera")
             df_estado = pd.DataFrame({
                 "Estado": ["Capital Recaudado", "Saldo Pendiente"],
-                "Monto": [capital_pagado, max(0, saldo_pendiente)]
+                "Monto": [capital_pagado, saldo_pendiente]
             })
             fig_pie = px.pie(df_estado, names="Estado", values="Monto", hole=0.4,
                              color_discrete_sequence=["#2ecc71", "#e74c3c"])
@@ -94,21 +97,19 @@ if df_clientes is not None and df_creditos is not None and df_pagos is not None:
         st.title("👤 Ficha de Cliente e Historial de Confianza")
         st.markdown("---")
 
-        lista_clientes = df_clientes['Nombre'].unique() if 'Nombre' in df_clientes.columns else []
+        lista_clientes = df_clientes[col_nombre].unique() if col_nombre else []
         cliente_sel = st.selectbox("Selecciona un cliente:", lista_clientes)
 
-        if cliente_sel:
-            info_cliente = df_clientes[df_clientes['Nombre'] == cliente_sel].iloc[0]
+        if cliente_sel and col_nombre and col_id_cliente:
+            info_cliente = df_clientes[df_clientes[col_nombre] == cliente_sel].iloc[0]
+            id_cliente = info_cliente.get(col_id_cliente, None)
             
-            # Obtener créditos y pagos del cliente
-            id_cliente = info_cliente.get('ID_Cliente', None)
-            creditos_cli = df_creditos[df_creditos['ID_Cliente'] == id_cliente] if id_cliente else pd.DataFrame()
-            pagos_cli = df_pagos[df_pagos['ID_Cliente'] == id_cliente] if id_cliente else pd.DataFrame()
+            creditos_cli = df_creditos[df_creditos[col_id_cliente] == id_cliente] if id_cliente else pd.DataFrame()
+            pagos_cli = df_pagos[df_pagos[col_id_cliente] == id_cliente] if (id_cliente and col_id_cliente in df_pagos.columns) else pd.DataFrame()
 
-            # Métricas del cliente
-            monto_prestado_cli = creditos_cli['Monto_Prestado'].sum() if not creditos_cli.empty else 0
-            monto_pagado_cli = pagos_cli['Monto_Pago'].sum() if not pagos_cli.empty else 0
-            saldo_cli = monto_prestado_cli - monto_pagado_cli
+            monto_prestado_cli = creditos_cli[col_capital].sum() if (col_capital and not creditos_cli.empty) else 0
+            monto_pagado_cli = pagos_cli[col_pago].sum() if (col_pago and not pagos_cli.empty) else 0
+            saldo_cli = max(0, monto_prestado_cli - monto_pagado_cli)
 
             # Indicador de Confianza / Scoring
             st.subheader("⭐ Calificación de Confianza")
@@ -124,9 +125,8 @@ if df_clientes is not None and df_creditos is not None and df_pagos is not None:
             col_a, col_b = st.columns(2)
             with col_a:
                 st.subheader("Información Personal")
-                st.write(f"**Nombre:** {info_cliente.get('Nombre', 'N/A')}")
-                st.write(f"**Contacto:** {info_cliente.get('Telefono', 'N/A')}")
-                st.write(f"**Cédula/ID:** {info_cliente.get('Documento', 'N/A')}")
+                for col in df_clientes.columns:
+                    st.write(f"**{col.capitalize()}:** {info_cliente.get(col, 'N/A')}")
 
             with col_b:
                 st.subheader("Resumen Financiero")
@@ -168,7 +168,7 @@ if df_clientes is not None and df_creditos is not None and df_pagos is not None:
 
             plazo_sim = st.slider("Plazo en meses:", min_value=1, max_value=24, value=6)
 
-        tasa_mensual = 0.03 # 3% fijo
+        tasa_mensual = 0.03
 
         with col_sim2:
             st.subheader("📋 Resumen de la Simulación")
@@ -184,7 +184,6 @@ if df_clientes is not None and df_creditos is not None and df_pagos is not None:
                 st.metric("Total General a Cancelar", f"${total_pagar:,.0f} COP")
 
             else:
-                # Amortización con cuota fija (Fórmula de Anualidad)
                 cuota_mensual = (monto_sim * tasa_mensual) / (1 - (1 + tasa_mensual)**(-plazo_sim))
                 total_pagar = cuota_mensual * plazo_sim
                 total_intereses = total_pagar - monto_sim
