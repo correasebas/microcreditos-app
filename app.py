@@ -10,7 +10,7 @@ st.set_page_config(
 )
 
 # Cargar datos desde el archivo Excel
-EXCEL_FILE = "proyecto microcréditos copia 3.xlsx"
+EXCEL_FILE = ""proyecto microcréditos copia 3.xlsx.xlsx""
 
 @st.cache_data(ttl=60)
 def load_data():
