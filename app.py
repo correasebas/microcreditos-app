@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from datetime import datetime
+import io
 
 # Configuración inicial de la página
 st.set_page_config(
@@ -16,20 +18,52 @@ def load_data():
     """Carga todas las hojas del archivo de Excel."""
     try:
         xls = pd.ExcelFile(EXCEL_FILE)
-        
         df_clientes = pd.read_excel(xls, sheet_name='Clientes')
         df_creditos = pd.read_excel(xls, sheet_name='Creditos')
         df_pagos = pd.read_excel(xls, sheet_name='Pagos')
         
         df_estado_cartera = pd.read_excel(xls, sheet_name='Estado_Cartera') if 'Estado_Cartera' in xls.sheet_names else None
         df_resumen = pd.read_excel(xls, sheet_name='Resumen_Cartera') if 'Resumen_Cartera' in xls.sheet_names else None
+        df_calendario = pd.read_excel(xls, sheet_name='Calendario_Intereses') if 'Calendario_Intereses' in xls.sheet_names else None
 
-        return df_clientes, df_creditos, df_pagos, df_estado_cartera, df_resumen
+        return df_clientes, df_creditos, df_pagos, df_estado_cartera, df_resumen, df_calendario
     except Exception as e:
         st.error(f"Error al cargar el archivo de Excel: {e}")
-        return None, None, None, None, None
+        return None, None, None, None, None, None
 
-df_clientes, df_creditos, df_pagos, df_estado_cartera, df_resumen = load_data()
+df_clientes, df_creditos, df_pagos_init, df_estado_cartera, df_resumen, df_calendario = load_data()
+
+# Inicializar estado de sesión para pagos si no existe
+if 'df_pagos' not in st.session_state:
+    if df_pagos_init is not None:
+        st.session_state['df_pagos'] = df_pagos_init.copy()
+    else:
+        st.session_state['df_pagos'] = pd.DataFrame()
+
+df_pagos = st.session_state['df_pagos']
+
+# Función para exportar todo el libro de Excel con los nuevos datos
+def exportar_excel_completo():
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        if df_clientes is not None:
+            df_clientes.to_excel(writer, sheet_name='Clientes', index=False)
+        if df_creditos is not None:
+            df_creditos.to_excel(writer, sheet_name='Creditos', index=False)
+        
+        # Limpiar columnas Unnamed de pagos antes de exportar
+        cols_pagos = [c for c in st.session_state['df_pagos'].columns if not str(c).startswith('Unnamed')]
+        st.session_state['df_pagos'][cols_pagos].to_excel(writer, sheet_name='Pagos', index=False)
+        
+        if df_estado_cartera is not None:
+            cols_ec = [c for c in df_estado_cartera.columns if not str(c).startswith('Unnamed')]
+            df_estado_cartera[cols_ec].to_excel(writer, sheet_name='Estado_Cartera', index=False)
+        if df_calendario is not None:
+            df_calendario.to_excel(writer, sheet_name='Calendario_Intereses', index=False)
+        if df_resumen is not None:
+            df_resumen.to_excel(writer, sheet_name='Resumen_Cartera', index=False)
+            
+    return output.getvalue()
 
 # ---------------------------------------------------------
 # MENÚ DE NAVEGACIÓN LATERAL
@@ -39,7 +73,7 @@ st.sidebar.caption("Créditos justos sobre la base de la confianza")
 
 opcion_menu = st.sidebar.radio(
     "Selecciona una sección:",
-    ["📊 Dashboard General", "👤 Ficha por Cliente", "🧮 Simulador de Créditos", "ℹ️ Sobre Nosotros & Políticas"]
+    ["📊 Dashboard General", "👤 Ficha por Cliente", "📝 Registrar Pago", "🧮 Simulador de Créditos", "ℹ️ Sobre Nosotros & Políticas"]
 )
 
 if df_creditos is not None:
@@ -110,7 +144,7 @@ if df_creditos is not None:
             st.dataframe(df_creditos, use_container_width=True)
 
     # =========================================================
-    # 2. FICHA POR CLIENTE (CON ESTADO DE MORA Y CAPITAL/INTERÉS)
+    # 2. FICHA POR CLIENTE
     # =========================================================
     elif opcion_menu == "👤 Ficha por Cliente":
         st.title("👤 Ficha de Cliente e Historial de Deuda")
@@ -126,7 +160,6 @@ if df_creditos is not None:
             creditos_cliente = df_creditos[df_creditos['cliente_id'] == cliente_id]
             pagos_cliente = df_pagos[df_pagos['cliente_id'] == cliente_id]
             
-            # Obtener datos financieros desde Estado_Cartera
             if df_estado_cartera is not None:
                 cartera_cliente = df_estado_cartera[df_estado_cartera['cliente_id'] == cliente_id]
             else:
@@ -137,10 +170,8 @@ if df_creditos is not None:
             deuda_vencida = cartera_cliente['deuda_vencida'].sum() if not cartera_cliente.empty else 0
             deuda_total = cartera_cliente['deuda_total_pendiente'].sum() if not cartera_cliente.empty else 0
 
-            # Determinar si tiene créditos en mora
             tiene_mora = any(cartera_cliente['estado'].astype(str).str.contains('mora', case=False, na=False)) if not cartera_cliente.empty else False
 
-            # Muestra de Estado
             if tiene_mora or deuda_vencida > 0:
                 st.error(f"⚠️ **Cliente con Cuotas/Intereses Vencidos:** Presenta un valor en mora de **${deuda_vencida:,.0f} COP**.")
             elif deuda_total == 0:
@@ -148,7 +179,6 @@ if df_creditos is not None:
             else:
                 st.info("🟢 **Al Día:** El cliente cuenta con sus cuotas e intereses al día.")
 
-            # Tarjetas de resumen del cliente
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Capital Pendiente", f"${cap_pendiente:,.0f} COP")
             m2.metric("Intereses Pendientes", f"${int_pendiente:,.0f} COP")
@@ -185,7 +215,114 @@ if df_creditos is not None:
                 st.info("Este cliente no registra pagos en el sistema.")
 
     # =========================================================
-    # 3. SIMULADOR DE CRÉDITOS
+    # 3. REGISTRAR PAGO
+    # =========================================================
+    elif opcion_menu == "📝 Registrar Pago":
+        st.title("📝 Formulario de Registro de Pagos")
+        st.markdown("Ingresa los datos del recaudo recibido para registrarlo en el sistema.")
+        st.markdown("---")
+
+        col_f1, col_f2 = st.columns([1, 1])
+
+        with col_f1:
+            lista_cli = df_clientes['nombre'].dropna().unique()
+            cliente_pago = st.selectbox("Selecciona el cliente que realiza el pago:", lista_cli)
+
+            info_cli_pago = df_clientes[df_clientes['nombre'] == cliente_pago].iloc[0]
+            cliente_id_pago = info_cli_pago['cliente_id']
+
+            # Créditos del cliente
+            creditos_cli = df_creditos[df_creditos['cliente_id'] == cliente_id_pago]
+
+            if creditos_cli.empty:
+                st.warning("Este cliente no tiene créditos registrados para asociar el pago.")
+            else:
+                opciones_credito = [f"{row['credito_id']} - Capital: ${row['capital_inicial']:,.0f} ({row['modalidad']})" for _, row in creditos_cli.iterrows()]
+                credito_sel_str = st.selectbox("Selecciona el Crédito:", opciones_credito)
+                credito_id_pago = credito_sel_str.split(" - ")[0]
+
+                fecha_pago = st.date_input("Fecha del Pago:", datetime.today())
+                medio_pago = st.selectbox("Medio de Pago:", ["Transferencia", "Nequi", "Bancolombia", "Efectivo", "Otro"])
+
+                valor_pago = st.number_input("Valor Pagado (COP):", min_value=1000, value=90000, step=5000, format="%d")
+                concepto = st.selectbox("Concepto del Pago:", ["Intereses", "Abono a Capital", "Intereses y capital"])
+
+        with col_f2:
+            st.subheader("⚙️ Desglose y Confirmación")
+            
+            if not creditos_cli.empty:
+                # Sugerencia de desglose por defecto
+                if concepto == "Intereses":
+                    pago_interes = valor_pago
+                    pago_capital = 0
+                elif concepto == "Abono a Capital":
+                    pago_interes = 0
+                    pago_capital = valor_pago
+                else:
+                    # Distribución manual o propuesta
+                    pago_interes = st.number_input("Monto destinado a Intereses:", min_value=0, max_value=int(valor_pago), value=int(valor_pago*0.3))
+                    pago_capital = valor_pago - pago_interes
+
+                observaciones = st.text_input("Observaciones (opcional):", value="")
+
+                st.markdown("### Resumen a Guardar:")
+                st.write(f"• **Cliente:** {cliente_pago} (`{cliente_id_pago}`)")
+                st.write(f"• **Crédito:** `{credito_id_pago}`")
+                st.write(f"• **Fecha:** {fecha_pago}")
+                st.write(f"• **Medio de Pago:** {medio_pago}")
+                st.write(f"• **Monto Total:** ${valor_pago:,.0f} COP")
+                st.write(f"  - Pago a Interés: **${pago_interes:,.0f} COP**")
+                st.write(f"  - Pago a Capital: **${pago_capital:,.0f} COP**")
+
+                if st.button("💾 Guardar Pago en el Sistema", type="primary"):
+                    # Generar nuevo pago_id
+                    existentes_ids = st.session_state['df_pagos']['pago_id'].dropna().tolist()
+                    nums = [int(str(x).replace('PAG', '')) for x in existentes_ids if str(x).startswith('PAG') and str(x).replace('PAG', '').isdigit()]
+                    nuevo_num = max(nums) + 1 if nums else 1
+                    nuevo_pago_id = f"PAG{nuevo_num:03d}"
+
+                    # Crear nueva fila
+                    nueva_fila = {
+                        'pago_id': nuevo_pago_id,
+                        'credito_id': credito_id_pago,
+                        'cliente_id': cliente_id_pago,
+                        'fecha_pago': pd.to_datetime(fecha_pago),
+                        'medio_pago': medio_pago,
+                        'valor_pago': valor_pago,
+                        'pago_interes': pago_interes,
+                        'pago_capital': pago_capital,
+                        'numero_cuota': None,
+                        'concepto': concepto,
+                        'observaciones': observaciones if observaciones else None,
+                        'interes_adicional': 0,
+                        'valor_cuota_calculado': 0
+                    }
+
+                    # Agregar al dataframe en session_state
+                    st.session_state['df_pagos'] = pd.concat([st.session_state['df_pagos'], pd.DataFrame([nueva_fila])], ignore_index=True)
+                    st.success(f"✅ ¡Pago **{nuevo_pago_id}** registrado correctamente en el sistema!")
+
+        st.markdown("---")
+
+        # Botón para descargar el Excel con el pago incluido
+        st.subheader("📥 Guardar en tu Archivo Excel")
+        st.markdown("Haz clic en el botón de abajo para descargar la versión más reciente del libro de Excel con **todos los nuevos pagos agregados**:")
+
+        excel_bytes = exportar_excel_completo()
+        st.download_button(
+            label="📥 Descargar Excel Actualizado (.xlsx)",
+            data=excel_bytes,
+            file_name="proyecto_microcreditos_actualizado.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+        st.markdown("---")
+        st.subheader("📋 Últimos Pagos Registrados")
+        cols_validas = [c for c in st.session_state['df_pagos'].columns if not str(c).startswith('Unnamed')]
+        st.dataframe(st.session_state['df_pagos'][cols_validas].tail(10), use_container_width=True)
+
+    # =========================================================
+    # 4. SIMULADOR DE CRÉDITOS
     # =========================================================
     elif opcion_menu == "🧮 Simulador de Créditos":
         st.title("🧮 Simulador de Créditos - Entre Amigos Capital")
@@ -222,7 +359,7 @@ if df_creditos is not None:
                 st.metric("Total General a Cancelar", f"${total_pagar:,.0f} COP")
 
     # =========================================================
-    # 4. SOBRE NOSOTROS & POLÍTICAS
+    # 5. SOBRE NOSOTROS & POLÍTICAS
     # =========================================================
     elif opcion_menu == "ℹ️ Sobre Nosotros & Políticas":
         st.title("🤝 Sobre Entre Amigos Capital")
