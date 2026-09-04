@@ -55,7 +55,7 @@ if df_creditos is not None:
         st.title("📊 Control General de Cartera")
         st.markdown("---")
 
-        # Extraer métricas directas si existe la hoja de resumen
+        # Valores predeterminados
         val_prestado = 23900000
         val_pagado = 3033328
         val_cap_pendiente = 20866672
@@ -68,7 +68,6 @@ if df_creditos is not None:
 
         if df_resumen is not None:
             try:
-                # Mapear valores dinámicamente desde el Excel
                 dict_resumen = pd.Series(df_resumen.iloc[:, 1].values, index=df_resumen.iloc[:, 0].values).to_dict()
                 for k, v in dict_resumen.items():
                     k_str = str(k).lower()
@@ -119,19 +118,47 @@ if df_creditos is not None:
             st.dataframe(df_creditos, use_container_width=True)
 
     # =========================================================
-    # 2. FICHA POR CLIENTE
+    # 2. FICHA POR CLIENTE (FILTRADA CORRECTAMENTE)
     # =========================================================
     elif opcion_menu == "👤 Ficha por Cliente":
         st.title("👤 Ficha de Cliente e Historial de Confianza")
         st.markdown("---")
 
-        col_nom = next((c for c in df_clientes.columns if 'nombre' in str(c).lower()), df_clientes.columns[0])
-        lista_clientes = df_clientes[col_nom].dropna().unique() if col_nom else []
+        # Detectar columnas clave de manera flexible
+        col_nom_cli = next((c for c in df_clientes.columns if 'nombre' in str(c).lower()), df_clientes.columns[0])
+        col_id_cli = next((c for c in df_clientes.columns if 'cliente' in str(c).lower() or 'id' in str(c).lower()), df_clientes.columns[0])
+        
+        lista_clientes = df_clientes[col_nom_cli].dropna().unique()
         cliente_sel = st.selectbox("Selecciona un cliente:", lista_clientes)
 
         if cliente_sel:
-            info_cliente = df_clientes[df_clientes[col_nom] == cliente_sel].iloc[0]
-            
+            # Fila del cliente seleccionado
+            info_cliente = df_clientes[df_clientes[col_nom_cli] == cliente_sel].iloc[0]
+            id_cliente = info_cliente[col_id_cli]
+
+            # Buscar la columna de cliente/crédito en las demás tablas
+            col_id_credito_cli = next((c for c in df_creditos.columns if 'cliente' in str(c).lower() or 'id' in str(c).lower()), None)
+            col_id_pago_cli = next((c for c in df_pagos.columns if 'cliente' in str(c).lower() or 'id' in str(c).lower()), None)
+
+            # Filtrar créditos del cliente
+            if col_id_credito_cli:
+                creditos_cliente = df_creditos[df_creditos[col_id_credito_cli] == id_cliente]
+                ids_creditos_cliente = creditos_cliente.iloc[:, 0].unique() if not creditos_cliente.empty else []
+            else:
+                creditos_cliente = pd.DataFrame()
+                ids_creditos_cliente = []
+
+            # Filtrar pagos del cliente (por id_cliente o por los id_credito del cliente)
+            if col_id_pago_cli:
+                pagos_cliente = df_pagos[df_pagos[col_id_pago_cli] == id_cliente]
+            else:
+                # Intentar filtrar pagos usando los IDs de crédito
+                col_credito_en_pagos = next((c for c in df_pagos.columns if 'credito' in str(c).lower() or 'id' in str(c).lower()), None)
+                if col_credito_en_pagos:
+                    pagos_cliente = df_pagos[df_pagos[col_credito_en_pagos].isin(ids_creditos_cliente)]
+                else:
+                    pagos_cliente = pd.DataFrame()
+
             st.subheader("Información Registrada")
             col_a, col_b = st.columns(2)
             with col_a:
@@ -142,8 +169,18 @@ if df_creditos is not None:
                     st.write(f"**{c.capitalize()}:** {info_cliente.get(c, 'N/A')}")
 
             st.markdown("---")
-            st.subheader("Historial de Pagos")
-            st.dataframe(df_pagos, use_container_width=True)
+            
+            st.subheader("Créditos de este Cliente")
+            if not creditos_cliente.empty:
+                st.dataframe(creditos_cliente, use_container_width=True)
+            else:
+                st.info("Este cliente no tiene créditos registrados.")
+
+            st.subheader("Historial de Pagos de este Cliente")
+            if not pagos_cliente.empty:
+                st.dataframe(pagos_cliente, use_container_width=True)
+            else:
+                st.info("Este cliente no registra pagos en el sistema.")
 
     # =========================================================
     # 3. SIMULADOR DE CRÉDITOS
