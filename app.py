@@ -177,7 +177,7 @@ elif opcion_menu == "📝 Registrar Pago":
 
 
 # =========================================================
-# 4. ALERTAS DE MORA Y GESTIÓN DE COBROS (RESTAURADO)
+# 4. ALERTAS DE MORA Y GESTIÓN DE COBROS (ADAPTADO A TU ESTRUCTURA EXCEL)
 # =========================================================
 elif opcion_menu == "🔔 Alertas & Cobros":
     st.title("🔔 Alertas de Mora y Gestión de Cobros")
@@ -193,35 +193,50 @@ elif opcion_menu == "🔔 Alertas & Cobros":
         )
         
         if not df_creditos.empty:
-            cols_cred_merge = [c for c in ['credito_id', 'fecha_inicio', 'dia_pago_mes'] if c in df_creditos.columns]
-            if len(cols_cred_merge) > 1:
-                df_mora = df_mora.merge(df_creditos[cols_cred_merge], on='credito_id', how='left')
+            cols_cred = [c for c in ['credito_id', 'fecha_inicio', 'fecha_limite_pago', 'dia_pago_mes'] if c in df_creditos.columns]
+            if len(cols_cred) > 1:
+                df_mora = df_mora.merge(df_creditos[cols_cred], on='credito_id', how='left')
 
-        # Filtrar créditos con deuda pendiente
+        # Filtrar créditos activos que tengan deuda pendiente
         df_mora = df_mora[df_mora['deuda_total_pendiente'] > 0].copy()
 
         if df_mora.empty:
             st.success("🎉 ¡Excelente! Toda la cartera está al día y en paz y salvo.")
         else:
-            def obtener_dias_mora(row):
-                # Usar dias_mora del Excel si existe y es numérico
-                if 'dias_mora' in row and pd.notnull(row['dias_mora']):
-                    try:
-                        return int(float(row['dias_mora']))
-                    except:
-                        pass
+            hoy = datetime.now()
+
+            # LÓGICA DE DÍAS DE RETRASO BASADA EN TU COLUMNA 'estado' Y 'deuda_vencida'
+            def calcular_dias_mora_excel(row):
+                estado_txt = str(row.get('estado', '')).strip().lower()
+                deuda_vencida = float(row.get('deuda_vencida', 0)) if pd.notnull(row.get('deuda_vencida')) else 0
                 
-                # Evaluar texto en la columna estado
-                estado_str = str(row.get('estado', '')).lower()
-                if 'mora' in estado_str or 'vencid' in estado_str or 'atras' in estado_str:
+                # 1. Intentar calcular por fecha si la columna existe en el Excel
+                for col_fecha in ['fecha_limite_pago', 'fecha_vencimiento', 'fecha_inicio']:
+                    if col_fecha in row and pd.notnull(row[col_fecha]):
+                        try:
+                            f_val = pd.to_datetime(row[col_fecha])
+                            dias_diff = (hoy - f_val).days
+                            if dias_diff > 0 and ('mora' in estado_txt or deuda_vencida > 0):
+                                return dias_diff
+                        except:
+                            pass
+
+                # 2. Si dice "En mora" o tiene deuda vencida > 0, asignar días estimados de mora
+                if 'mora' in estado_txt or deuda_vencida > 0:
+                    # Asignación basada en la proporción de deuda vencida o valor base de mora
                     return 30
                 
+                # 3. Está Al Día
                 return 0
 
-            df_mora['dias_mora_calculados'] = df_mora.apply(obtener_dias_mora, axis=1)
+            df_mora['dias_mora_calculados'] = df_mora.apply(calcular_dias_mora_excel, axis=1)
 
-            def clasificar_riesgo(dias):
-                if dias <= 0:
+            def clasificar_riesgo(row):
+                dias = row['dias_mora_calculados']
+                estado_txt = str(row.get('estado', '')).strip().lower()
+                deuda_vencida = float(row.get('deuda_vencida', 0)) if pd.notnull(row.get('deuda_vencida')) else 0
+
+                if 'al día' in estado_txt or 'al dia' in estado_txt or (dias <= 0 and deuda_vencida == 0):
                     return "🟢 Al Día / Preventivo"
                 elif dias <= 30:
                     return "🟡 Retraso Leve (1-30 días)"
@@ -230,31 +245,30 @@ elif opcion_menu == "🔔 Alertas & Cobros":
                 else:
                     return "🔴 Retraso Alto (>60 días)"
 
-            df_mora['nivel_riesgo'] = df_mora['dias_mora_calculados'].apply(clasificar_riesgo)
+            df_mora['nivel_riesgo'] = df_mora.apply(clasificar_riesgo, axis=1)
 
-            tot_clientes_mora = len(df_mora[df_mora['dias_mora_calculados'] > 0])
+            # Métricas
+            tot_clientes_mora = len(df_mora[df_mora['nivel_riesgo'] != "🟢 Al Día / Preventivo"])
             monto_pendiente = df_mora['deuda_total_pendiente'].sum()
             max_dias = df_mora['dias_mora_calculados'].max()
 
             c_a1, c_a2, c_a3, c_a4 = st.columns(4)
             c_a1.metric("Clientes Activos", f"{len(df_mora)}")
-            c_a2.metric("Clientes con Retraso", f"{tot_clientes_mora}", delta=f"{tot_clientes_mora} alertas", delta_color="inverse")
+            c_a2.metric("Clientes en Mora", f"{tot_clientes_mora}", delta=f"{tot_clientes_mora} alertas", delta_color="inverse")
             c_a3.metric("Deuda Pendiente Total", f"${monto_pendiente:,.0f} COP")
             c_a4.metric("Máximo Días de Retraso", f"{max_dias} días")
 
             st.markdown("---")
 
-            # Filtro multiselect (sin filtros seleccionados por defecto para ver todas las categorías)
+            # Filtro multiselect (Inicia con todas las opciones marcadas para que veas todos los clientes de una)
+            opciones_filtro = ["🟢 Al Día / Preventivo", "🟡 Retraso Leve (1-30 días)", "🟠 Retraso Medio (31-60 días)", "🔴 Retraso Alto (>60 días)"]
             filtro_nivel = st.multiselect(
                 "Filtrar por Nivel de Retraso:",
-                options=["🟢 Al Día / Preventivo", "🟡 Retraso Leve (1-30 días)", "🟠 Retraso Medio (31-60 días)", "🔴 Retraso Alto (>60 días)"],
-                default=[]
+                options=opciones_filtro,
+                default=opciones_filtro
             )
 
-            if filtro_nivel:
-                df_filtrado = df_mora[df_mora['nivel_riesgo'].isin(filtro_nivel)]
-            else:
-                df_filtrado = df_mora.copy()
+            df_filtrado = df_mora[df_mora['nivel_riesgo'].isin(filtro_nivel)]
 
             st.subheader("📋 Detalle de Clientes y Gestión de Cobro")
 
@@ -263,14 +277,16 @@ elif opcion_menu == "🔔 Alertas & Cobros":
             else:
                 for _, row in df_filtrado.iterrows():
                     dias = int(row['dias_mora_calculados'])
-                    with st.expander(f"{row['nivel_riesgo']} | {row['nombre']} - Crédito `{row['credito_id']}` ({dias} días de retraso)"):
+                    deuda_venc = float(row.get('deuda_vencida', 0)) if pd.notnull(row.get('deuda_vencida')) else 0
+
+                    with st.expander(f"{row['nivel_riesgo']} | {row['nombre']} - Crédito `{row['credito_id']}` (Estado: {row.get('estado', 'N/A')})"):
                         col_m1, col_m2 = st.columns([1, 1])
 
                         with col_m1:
                             st.write(f"**Cliente:** {row['nombre']}")
                             st.write(f"**Teléfono:** {row.get('telefono', 'N/A')}")
-                            st.write(f"**Estado registrado:** {row.get('estado', 'N/A')}")
-                            st.write(f"**Días de Retraso:** {dias} días")
+                            st.write(f"**Estado registrado:** `{row.get('estado', 'N/A')}`")
+                            st.write(f"**Deuda Vencida:** ${deuda_venc:,.0f} COP")
                             st.write(f"**Capital Pendiente:** ${row.get('capital_pendiente', 0):,.0f} COP")
                             st.write(f"**Intereses Pendientes:** ${row.get('interes_pendiente', 0):,.0f} COP")
                             st.write(f"**Deuda Total Pendiente:** ${row['deuda_total_pendiente']:,.0f} COP")
@@ -294,14 +310,13 @@ elif opcion_menu == "🔔 Alertas & Cobros":
                             elif tipo_msg == "Recordatorio de Retraso":
                                 texto_base = (
                                     f"Hola *{row['nombre']}* 👋,\n\n"
-                                    f"Te escribimos de *Entre Amigos Capital* 🤝 para recordarte que registras un saldo pendiente en tu crédito *{row['credito_id']}*.\n\n"
-                                    f"🔹 *Saldo Pendiente:* ${row['deuda_total_pendiente']:,.0f} COP\n\n"
-                                    f"Te invitamos a ponerte al día para mantener tus condiciones activas. Por favor confirmanos cuándo podrías realizar el abono. ¡Gracias!"
+                                    f"Te escribimos de *Entre Amigos Capital* 🤝 para recordarte que registras un saldo vencido de *${deuda_venc:,.0f} COP* (Deuda Total: *${row['deuda_total_pendiente']:,.0f} COP*) en tu crédito *{row['credito_id']}*.\n\n"
+                                    f"Te invitamos a ponerte al día para mantener tus condiciones activas. Por favor confírmanos cuándo podrías realizar el abono. ¡Gracias!"
                                 )
                             else:
                                 texto_base = (
                                     f"Hola *{row['nombre']}* 👋,\n\n"
-                                    f"Nos comunicamos de *Entre Amigos Capital* 🤝 referente a tu crédito *{row['credito_id']}*, el cual presenta un saldo pendiente de *${row['deuda_total_pendiente']:,.0f} COP*.\n\n"
+                                    f"Nos comunicamos de *Entre Amigos Capital* 🤝 referente a tu crédito *{row['credito_id']}*, el cual se encuentra actualmente en estado *{row.get('estado', 'En mora')}* con un saldo vencido de *${deuda_venc:,.0f} COP*.\n\n"
                                     f"Te pedimos ponerte en contacto con nosotros hoy mismo para definir una fecha de pago. ¡Agradecemos tu atención!"
                                 )
 
