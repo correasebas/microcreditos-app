@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import io
+import os
 
 # Configuración inicial de la página
 st.set_page_config(
@@ -32,7 +33,7 @@ def load_data():
 
 df_clientes_init, df_creditos_init, df_pagos_init, df_estado_cartera_init, df_resumen_init, df_calendario_init = load_data()
 
-# Inicializar st.session_state para mantener persistenes todas las tablas en memoria
+# Inicializar st.session_state para mantener persistentes las tablas en memoria
 if 'df_clientes' not in st.session_state:
     st.session_state['df_clientes'] = df_clientes_init.copy() if df_clientes_init is not None else pd.DataFrame()
 if 'df_creditos' not in st.session_state:
@@ -94,15 +95,15 @@ def exportar_excel_completo():
         if not df_creditos.empty:
             cols_cred = [c for c in df_creditos.columns if not str(c).startswith('Unnamed')]
             df_creditos[cols_cred].to_excel(writer, sheet_name='Creditos', index=False)
-        if not df_pagos.empty:
-            cols_pagos = [c for c in df_pagos.columns if not str(c).startswith('Unnamed')]
-            df_pagos[cols_pagos].to_excel(writer, sheet_name='Pagos', index=False)
-        if not df_estado_cartera.empty:
-            cols_ec = [c for c in df_estado_cartera.columns if not str(c).startswith('Unnamed')]
-            df_estado_cartera[cols_ec].to_excel(writer, sheet_name='Estado_Cartera', index=False)
-        if not df_calendario.empty:
-            cols_cal = [c for c in df_calendario.columns if not str(c).startswith('Unnamed')]
-            df_calendario[cols_cal].to_excel(writer, sheet_name='Calendario_Intereses', index=False)
+        if not st.session_state['df_pagos'].empty:
+            cols_pagos = [c for c in st.session_state['df_pagos'].columns if not str(c).startswith('Unnamed')]
+            st.session_state['df_pagos'][cols_pagos].to_excel(writer, sheet_name='Pagos', index=False)
+        if not st.session_state['df_estado_cartera'].empty:
+            cols_ec = [c for c in st.session_state['df_estado_cartera'].columns if not str(c).startswith('Unnamed')]
+            st.session_state['df_estado_cartera'][cols_ec].to_excel(writer, sheet_name='Estado_Cartera', index=False)
+        if not st.session_state['df_calendario'].empty:
+            cols_cal = [c for c in st.session_state['df_calendario'].columns if not str(c).startswith('Unnamed')]
+            st.session_state['df_calendario'][cols_cal].to_excel(writer, sheet_name='Calendario_Intereses', index=False)
         if not df_resumen_actualizado.empty:
             df_resumen_actualizado.to_excel(writer, sheet_name='Resumen_Cartera', index=False)
             
@@ -190,8 +191,8 @@ if not df_creditos.empty:
             cliente_id = info_cliente['cliente_id']
 
             creditos_cliente = df_creditos[df_creditos['cliente_id'] == cliente_id]
-            pagos_cliente = df_pagos[df_pagos['cliente_id'] == cliente_id]
-            cartera_cliente = df_estado_cartera[df_estado_cartera['cliente_id'] == cliente_id] if not df_estado_cartera.empty else pd.DataFrame()
+            pagos_cliente = st.session_state['df_pagos'][st.session_state['df_pagos']['cliente_id'] == cliente_id]
+            cartera_cliente = st.session_state['df_estado_cartera'][st.session_state['df_estado_cartera']['cliente_id'] == cliente_id] if not st.session_state['df_estado_cartera'].empty else pd.DataFrame()
 
             cap_pendiente = cartera_cliente['capital_pendiente'].sum() if not cartera_cliente.empty else 0
             int_pendiente = cartera_cliente['interes_pendiente'].sum() if not cartera_cliente.empty else 0
@@ -240,7 +241,7 @@ if not df_creditos.empty:
                 st.dataframe(pagos_cliente[cols_validas], use_container_width=True)
 
     # =========================================================
-    # 3. REGISTRAR PAGO (ACTUALIZACIÓN EN CADENA)
+    # 3. REGISTRAR PAGO
     # =========================================================
     elif opcion_menu == "📝 Registrar Pago":
         st.title("📝 Formulario de Registro de Pagos")
@@ -266,7 +267,9 @@ if not df_creditos.empty:
                 credito_id_pago = credito_sel_str.split(" - ")[0]
 
                 fecha_pago = st.date_input("Fecha del Pago:", datetime.today())
-                medio_pago = st.selectbox("Medio de Pago:", ["Transferencia", "Nequi", "Bancolombia", "Efectivo", "Otro"])
+                
+                # MODIFICACIÓN: Solamente Transferencia y Efectivo
+                medio_pago = st.selectbox("Medio de Pago:", ["Transferencia", "Efectivo"])
 
                 valor_pago = st.number_input("Valor Pagado (COP):", min_value=1000, value=90000, step=5000, format="%d")
                 concepto = st.selectbox("Concepto del Pago:", ["Intereses", "Abono a Capital", "Intereses y capital"])
@@ -287,24 +290,24 @@ if not df_creditos.empty:
 
                 observaciones = st.text_input("Observaciones (opcional):", value="")
 
+                # CALCULAR PRÓXIMO ID DE PAGO (PAG069, etc.)
+                existentes_ids = st.session_state['df_pagos']['pago_id'].dropna().tolist()
+                nums = [int(str(x).replace('PAG', '')) for x in existentes_ids if str(x).startswith('PAG') and str(x).replace('PAG', '').isdigit()]
+                nuevo_num = max(nums) + 1 if nums else 1
+                proximo_pago_id = f"PAG{nuevo_num:03d}"
+
                 st.markdown("### Resumen a Procesar:")
+                st.write(f"• **ID Nuevo Pago:** `{proximo_pago_id}`")
                 st.write(f"• **Cliente:** {cliente_pago} (`{cliente_id_pago}`)")
                 st.write(f"• **Crédito:** `{credito_id_pago}`")
                 st.write(f"• **Fecha:** {fecha_pago}")
+                st.write(f"• **Medio de Pago:** {medio_pago}")
                 st.write(f"• **Abono a Intereses:** ${pago_interes:,.0f} COP")
                 st.write(f"• **Abono a Capital:** ${pago_capital:,.0f} COP")
 
                 if st.button("💾 Registrar Pago y Actualizar Excel Completo", type="primary"):
-                    # ----------------------------------------------------
-                    # 1. ACTUALIZAR 'Pagos'
-                    # ----------------------------------------------------
-                    existentes_ids = df_pagos['pago_id'].dropna().tolist()
-                    nums = [int(str(x).replace('PAG', '')) for x in existentes_ids if str(x).startswith('PAG') and str(x).replace('PAG', '').isdigit()]
-                    nuevo_num = max(nums) + 1 if nums else 1
-                    nuevo_pago_id = f"PAG{nuevo_num:03d}"
-
                     nueva_fila_pago = {
-                        'pago_id': nuevo_pago_id,
+                        'pago_id': proximo_pago_id,
                         'credito_id': credito_id_pago,
                         'cliente_id': cliente_id_pago,
                         'fecha_pago': pd.to_datetime(fecha_pago),
@@ -318,11 +321,11 @@ if not df_creditos.empty:
                         'interes_adicional': 0,
                         'valor_cuota_calculado': 0
                     }
-                    st.session_state['df_pagos'] = pd.concat([df_pagos, pd.DataFrame([nueva_fila_pago])], ignore_index=True)
 
-                    # ----------------------------------------------------
-                    # 2. ACTUALIZAR 'Creditos' (saldo_capital y estado)
-                    # ----------------------------------------------------
+                    # 1. ACTUALIZAR 'df_pagos' en la sesión
+                    st.session_state['df_pagos'] = pd.concat([st.session_state['df_pagos'], pd.DataFrame([nueva_fila_pago])], ignore_index=True)
+
+                    # 2. ACTUALIZAR 'Creditos'
                     idx_cred = df_creditos.index[df_creditos['credito_id'] == credito_id_pago].tolist()
                     if idx_cred:
                         ic = idx_cred[0]
@@ -332,26 +335,22 @@ if not df_creditos.empty:
                         if nuevo_saldo_cap == 0:
                             st.session_state['df_creditos'].loc[ic, 'estado_credito'] = "Finalizado"
 
-                    # ----------------------------------------------------
                     # 3. ACTUALIZAR 'Calendario_Intereses'
-                    # ----------------------------------------------------
-                    if not df_calendario.empty and pago_interes > 0:
+                    if not st.session_state['df_calendario'].empty and pago_interes > 0:
                         remanente_int = pago_interes
-                        filas_cal = df_calendario[df_calendario['credito_id'] == credito_id_pago].index.tolist()
+                        filas_cal = st.session_state['df_calendario'][st.session_state['df_calendario']['credito_id'] == credito_id_pago].index.tolist()
                         for idx_c in filas_cal:
                             if remanente_int <= 0:
                                 break
-                            int_pend = df_calendario.loc[idx_c, 'interes_pendiente']
+                            int_pend = st.session_state['df_calendario'].loc[idx_c, 'interes_pendiente']
                             if int_pend > 0:
                                 abono = min(remanente_int, int_pend)
                                 st.session_state['df_calendario'].loc[idx_c, 'interes_pagado'] += abono
                                 st.session_state['df_calendario'].loc[idx_c, 'interes_pendiente'] -= abono
                                 remanente_int -= abono
 
-                    # ----------------------------------------------------
                     # 4. ACTUALIZAR 'Estado_Cartera'
-                    # ----------------------------------------------------
-                    idx_ec = df_estado_cartera.index[df_estado_cartera['credito_id'] == credito_id_pago].tolist()
+                    idx_ec = st.session_state['df_estado_cartera'].index[st.session_state['df_estado_cartera']['credito_id'] == credito_id_pago].tolist()
                     if idx_ec:
                         ie = idx_ec[0]
                         st.session_state['df_estado_cartera'].loc[ie, 'capital_pagado'] += pago_capital
@@ -372,12 +371,12 @@ if not df_creditos.empty:
                         elif nuevo_vencido == 0:
                             st.session_state['df_estado_cartera'].loc[ie, 'estado'] = "Al día"
 
-                    st.success(f"✅ ¡Pago **{nuevo_pago_id}** registrado! Se han actualizado todas las hojas del Excel.")
+                    st.success(f"✅ ¡Pago **{proximo_pago_id}** registrado exitosamente!")
 
         st.markdown("---")
 
         st.subheader("📥 Descargar Libro de Excel Actualizado")
-        st.markdown("Haz clic abajo para obtener la versión del archivo con todas las hojas de cartera recalculadas:")
+        st.markdown("Para mantener la copia de respaldo sincronizada, descarga aquí el archivo con todas las hojas actualizadas:")
 
         excel_bytes = exportar_excel_completo()
         st.download_button(
