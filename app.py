@@ -14,7 +14,7 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
-# INICIALIZACIÓN DE SESSION STATE
+# INICIALIZACIÓN DE SESSION STATE (PREVIENE KEYERROR)
 # ---------------------------------------------------------
 if 'df_clientes' not in st.session_state:
     st.session_state['df_clientes'] = pd.DataFrame()
@@ -39,6 +39,7 @@ if uploaded_file is not None:
     try:
         xls = pd.ExcelFile(uploaded_file)
         
+        # Cargar pestañas
         st.session_state['df_clientes'] = pd.read_excel(xls, 'Clientes') if 'Clientes' in xls.sheet_names else pd.DataFrame()
         st.session_state['df_creditos'] = pd.read_excel(xls, 'Creditos') if 'Creditos' in xls.sheet_names else pd.DataFrame()
         st.session_state['df_estado_cartera'] = pd.read_excel(xls, 'Estado_Cartera') if 'Estado_Cartera' in xls.sheet_names else pd.DataFrame()
@@ -50,8 +51,7 @@ if uploaded_file is not None:
             st.session_state['df_historico_pagos'] = pd.read_excel(xls, 'Pagos')
         else:
             st.session_state['df_historico_pagos'] = pd.DataFrame()
-        
-        st.sidebar.success("✅ Archivo cargado correctamente")
+            
     except Exception as e:
         st.sidebar.error(f"Error al cargar el archivo Excel: {e}")
 
@@ -69,6 +69,7 @@ opcion_menu = st.sidebar.radio(
     ]
 )
 
+# Recuperar DataFrames desde session_state de forma segura
 df_clientes = st.session_state['df_clientes']
 df_creditos = st.session_state['df_creditos']
 df_estado_cartera = st.session_state['df_estado_cartera']
@@ -182,96 +183,139 @@ elif opcion_menu == "📝 Registrar Pago":
 
 
 # =========================================================
-# 4. ALERTAS DE MORA Y GESTIÓN DE COBROS (2 OPCIONES)
+# 4. ALERTAS DE MORA Y GESTIÓN DE COBROS (VERSIÓN BASE)
 # =========================================================
 elif opcion_menu == "🔔 Alertas & Cobros":
-    st.title("🔔 Alertas & Cobros")
-    st.markdown("Gestión simplificada de cartera: clientes al día y clientes en mora.")
+    st.title("🔔 Alertas de Mora y Gestión de Cobros")
+    st.markdown("Seguimiento de días de retraso en los pagos y generación de avisos vía WhatsApp sin cobro de intereses por mora.")
     st.markdown("---")
 
     if df_estado_cartera.empty:
-        st.info("No hay información disponible. Carga tu archivo Excel en la barra lateral.")
+        st.info("No hay información disponible en la tabla de estado de cartera. Carga tu archivo Excel en la barra lateral.")
     else:
         df_mora = df_estado_cartera.merge(
             df_clientes[['cliente_id', 'nombre', 'telefono']], on='cliente_id', how='left'
         )
+        
+        if not df_creditos.empty:
+            cols_cred_merge = [c for c in ['credito_id', 'fecha_inicio', 'dia_pago_mes'] if c in df_creditos.columns]
+            if len(cols_cred_merge) > 1:
+                df_mora = df_mora.merge(df_creditos[cols_cred_merge], on='credito_id', how='left')
 
-        def clasificar_estado_simple(row):
-            est = str(row.get('estado', '')).strip().lower()
-            if 'mora' in est or 'vencid' in est or 'atras' in est:
-                return "🔴 En Mora"
-            return "🟢 Al Día"
+        df_mora = df_mora[df_mora['deuda_total_pendiente'] > 0].copy()
 
-        df_mora['clasificacion_simple'] = df_mora.apply(clasificar_estado_simple, axis=1)
-
-        tot_mora = len(df_mora[df_mora['clasificacion_simple'] == "🔴 En Mora"])
-        tot_aldia = len(df_mora[df_mora['clasificacion_simple'] == "🟢 Al Día"])
-        deuda_mora = df_mora[df_mora['clasificacion_simple'] == "🔴 En Mora"]['deuda_total_pendiente'].sum()
-
-        c_a1, c_a2, c_a3 = st.columns(3)
-        c_a1.metric("Clientes Al Día", f"{tot_aldia}")
-        c_a2.metric("Clientes En Mora", f"{tot_mora}", delta=f"{tot_mora} casos", delta_color="inverse")
-        c_a3.metric("Monto Total Pendiente en Mora", f"${deuda_mora:,.0f} COP")
-
-        st.markdown("---")
-
-        filtro_estado = st.radio(
-            "Selecciona el grupo a consultar:",
-            options=["🔴 En Mora", "🟢 Al Día"],
-            horizontal=True
-        )
-
-        df_filtrado = df_mora[df_mora['clasificacion_simple'] == filtro_estado]
-
-        st.subheader(f"📋 Registro de Clientes ({filtro_estado})")
-
-        if df_filtrado.empty:
-            st.info(f"No hay registros en la categoría {filtro_estado}.")
+        if df_mora.empty:
+            st.success("🎉 ¡Excelente! Toda la cartera está al día y en paz y salvo.")
         else:
-            for _, row in df_filtrado.iterrows():
-                deuda_val = row.get('deuda_total_pendiente', 0)
-                deuda_venc = row.get('deuda_vencida', 0)
-                nombre_cliente = row.get('nombre', 'Cliente')
+            def obtener_dias_mora(row):
+                if 'dias_mora' in row and pd.notnull(row['dias_mora']):
+                    try:
+                        return int(float(row['dias_mora']))
+                    except:
+                        pass
+                
+                estado_str = str(row.get('estado', '')).lower()
+                if 'mora' in estado_str or 'vencid' in estado_str or 'atras' in estado_str:
+                    return 30
+                
+                return 0
 
-                with st.expander(f"{row['clasificacion_simple']} | {nombre_cliente} - Crédito `{row['credito_id']}` | Pendiente: ${deuda_val:,.0f} COP"):
-                    col_m1, col_m2 = st.columns([1, 1])
+            df_mora['dias_mora_calculados'] = df_mora.apply(obtener_dias_mora, axis=1)
 
-                    with col_m1:
-                        st.write(f"**Cliente:** {nombre_cliente}")
-                        st.write(f"**Teléfono:** {row.get('telefono', 'N/A')}")
-                        st.write(f"**Estado en Excel:** `{row.get('estado', 'N/A')}`")
-                        st.write(f"**Capital Pendiente:** ${row.get('capital_pendiente', 0):,.0f} COP")
-                        st.write(f"**Deuda Vencida:** ${deuda_venc:,.0f} COP")
-                        st.write(f"**Deuda Total Pendiente:** ${deuda_val:,.0f} COP")
+            def clasificar_riesgo(dias):
+                if dias <= 0:
+                    return "🟢 Al Día / Preventivo"
+                elif dias <= 30:
+                    return "🟡 Retraso Leve (1-30 días)"
+                elif dias <= 60:
+                    return "🟠 Retraso Medio (31-60 días)"
+                else:
+                    return "🔴 Retraso Alto (>60 días)"
 
-                    with col_m2:
-                        st.write("📲 **Aviso Preventivo WhatsApp:**")
+            df_mora['nivel_riesgo'] = df_mora['dias_mora_calculados'].apply(clasificar_riesgo)
 
-                        if filtro_estado == "🔴 En Mora":
-                            texto_base = (
-                                f"Hola *{nombre_cliente}* 👋,\n\n"
-                                f"Te saludamos amablemente de *Entre Amigos Capital* 🤝.\n\n"
-                                f"Te escribimos para informarte de manera preventiva que tu crédito *{row['credito_id']}* registra días de mora / atraso en su pago.\n\n"
-                                f"📌 *Valor Pendiente:* ${deuda_val:,.0f} COP\n\n"
-                                f"Te invitamos a ponernos al día o confirmarnos la fecha en que podrías efectuar tu abono. ¡Agradecemos tu atención!"
+            tot_clientes_mora = len(df_mora[df_mora['dias_mora_calculados'] > 0])
+            monto_pendiente = df_mora['deuda_total_pendiente'].sum()
+            max_dias = df_mora['dias_mora_calculados'].max()
+
+            c_a1, c_a2, c_a3, c_a4 = st.columns(4)
+            c_a1.metric("Clientes Activos", f"{len(df_mora)}")
+            c_a2.metric("Clientes con Retraso", f"{tot_clientes_mora}", delta=f"{tot_clientes_mora} alertas", delta_color="inverse")
+            c_a3.metric("Deuda Pendiente Total", f"${monto_pendiente:,.0f} COP")
+            c_a4.metric("Máximo Días de Retraso", f"{max_dias} días")
+
+            st.markdown("---")
+
+            filtro_nivel = st.multiselect(
+                "Filtrar por Nivel de Retraso:",
+                options=["🟢 Al Día / Preventivo", "🟡 Retraso Leve (1-30 días)", "🟠 Retraso Medio (31-60 días)", "🔴 Retraso Alto (>60 días)"],
+                default=[]
+            )
+
+            if filtro_nivel:
+                df_filtrado = df_mora[df_mora['nivel_riesgo'].isin(filtro_nivel)]
+            else:
+                df_filtrado = df_mora.copy()
+
+            st.subheader("📋 Detalle de Clientes y Gestión de Cobro")
+
+            if df_filtrado.empty:
+                st.info("No hay registros que coincidan con los filtros seleccionados.")
+            else:
+                for _, row in df_filtrado.iterrows():
+                    dias = int(row['dias_mora_calculados'])
+                    nombre_cliente = row.get('nombre', 'Cliente')
+                    with st.expander(f"{row['nivel_riesgo']} | {nombre_cliente} - Crédito `{row['credito_id']}` ({dias} días de retraso)"):
+                        col_m1, col_m2 = st.columns([1, 1])
+
+                        with col_m1:
+                            st.write(f"**Cliente:** {nombre_cliente}")
+                            st.write(f"**Teléfono:** {row.get('telefono', 'N/A')}")
+                            st.write(f"**Estado registrado:** {row.get('estado', 'N/A')}")
+                            st.write(f"**Días de Retraso:** {dias} días")
+                            st.write(f"**Capital Pendiente:** ${row.get('capital_pendiente', 0):,.0f} COP")
+                            st.write(f"**Intereses Pendientes:** ${row.get('interes_pendiente', 0):,.0f} COP")
+                            st.write(f"**Deuda Total Pendiente:** ${row['deuda_total_pendiente']:,.0f} COP")
+
+                        with col_m2:
+                            st.write("📲 **Plantillas de Recordatorio de Pago:**")
+
+                            tipo_msg = st.radio(
+                                "Selecciona el tipo de aviso:",
+                                ["Preventivo", "Recordatorio de Retraso", "Aviso de Urgencia"],
+                                key=f"radio_{row['credito_id']}"
                             )
-                        else:
-                            texto_base = (
-                                f"Hola *{nombre_cliente}* 👋,\n\n"
-                                f"Te saludamos de *Entre Amigos Capital* 🤝.\n\n"
-                                f"Te confirmamos que tu crédito *{row['credito_id']}* se encuentra al día. Saldo total pendiente: *${deuda_val:,.0f} COP*.\n\n"
-                                f"¡Gracias por tu responsabilidad y compromiso!"
-                            )
 
-                        msg_editado = st.text_area("Editar mensaje antes de enviar:", value=texto_base, height=140, key=f"txt_{row['credito_id']}")
-                        
-                        num_tel = "".join(filter(str.isdigit, str(row.get('telefono', ''))))
-                        if len(num_tel) == 10 and not num_tel.startswith("57"):
-                            num_tel = "57" + num_tel
+                            if tipo_msg == "Preventivo":
+                                texto_base = (
+                                    f"Hola *{nombre_cliente}* 👋,\n\n"
+                                    f"Te saludamos de *Entre Amigos Capital* 🤝.\n"
+                                    f"Te recordamos amablemente que tu cuota del crédito *{row['credito_id']}* está próxima a vencer por un saldo pendiente de *${row['deuda_total_pendiente']:,.0f} COP*.\n\n"
+                                    f"Quedamos atentos a la confirmación de tu pago. ¡Que tengas un excelente día!"
+                                )
+                            elif tipo_msg == "Recordatorio de Retraso":
+                                texto_base = (
+                                    f"Hola *{nombre_cliente}* 👋,\n\n"
+                                    f"Te escribimos de *Entre Amigos Capital* 🤝 para recordarte que registras un saldo pendiente en tu crédito *{row['credito_id']}*.\n\n"
+                                    f"🔹 *Saldo Pendiente:* ${row['deuda_total_pendiente']:,.0f} COP\n\n"
+                                    f"Te invitamos a ponerte al día para mantener tus condiciones activas. Por favor confírmanos cuándo podrías realizar el abono. ¡Gracias!"
+                                )
+                            else:
+                                texto_base = (
+                                    f"Hola *{nombre_cliente}* 👋,\n\n"
+                                    f"Nos comunicamos de *Entre Amigos Capital* 🤝 referente a tu crédito *{row['credito_id']}*, el cual presenta un saldo pendiente de *${row['deuda_total_pendiente']:,.0f} COP*.\n\n"
+                                    f"Te pedimos ponerte en contacto con nosotros hoy mismo para definir una fecha de pago. ¡Agradecemos tu atención!"
+                                )
 
-                        msg_enc = urllib.parse.quote(msg_editado)
-                        
-                        st.link_button("💬 Enviar Mensaje por WhatsApp", f"https://wa.me/{num_tel}?text={msg_enc}", use_container_width=True)
+                            msg_editado = st.text_area("Editar mensaje antes de enviar:", value=texto_base, height=130, key=f"txt_{row['credito_id']}")
+                            
+                            num_tel = "".join(filter(str.isdigit, str(row.get('telefono', ''))))
+                            if len(num_tel) == 10 and not num_tel.startswith("57"):
+                                num_tel = "57" + num_tel
+
+                            msg_enc = urllib.parse.quote(msg_editado)
+                            
+                            st.link_button("💬 Enviar Recordatorio por WhatsApp", f"https://wa.me/{num_tel}?text={msg_enc}", use_container_width=True)
 
 
 # =========================================================
@@ -311,3 +355,4 @@ elif opcion_menu == "ℹ️ Sobre Nosotros & Políticas":
     st.subheader("🤝 Entre Amigos Capital")
     st.write("**Misión:** Créditos justos sobre la base de la confianza.")
     st.write("**Política de Cobro:** No se cobran intereses de mora por retrasos. Se prioriza el diálogo directo y el acuerdo de pago mutuo.")
+    
