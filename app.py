@@ -174,21 +174,22 @@ elif opcion_menu == "📝 Registrar Pago":
 
 
 # =========================================================
-# 4. ALERTAS DE MORA Y GESTIÓN DE COBROS (2 ESTADOS SIMPLIFICADOS)
+# 4. ALERTAS DE MORA Y GESTIÓN DE COBROS (SOLO 2 OPCIONES)
 # =========================================================
 elif opcion_menu == "🔔 Alertas & Cobros":
     st.title("🔔 Alertas & Cobros")
-    st.markdown("Seguimiento simple de estado de cuenta y envío preventivo por WhatsApp.")
+    st.markdown("Gestión simplificada de cartera: clientes al día y clientes en mora.")
     st.markdown("---")
 
     if df_estado_cartera.empty:
-        st.info("No hay información disponible en la tabla de estado de cartera. Carga tu archivo Excel en el menú lateral.")
+        st.info("No hay información disponible. Carga tu archivo Excel en la barra lateral.")
     else:
+        # Cruce con datos del cliente
         df_mora = df_estado_cartera.merge(
             df_clientes[['cliente_id', 'nombre', 'telefono']], on='cliente_id', how='left'
         )
 
-        # Clasificación simplificada en 2 grupos directamente desde la columna 'estado' del Excel
+        # Clasificación simplificada basada en la columna 'estado' del Excel
         def clasificar_estado_simple(row):
             est = str(row.get('estado', '')).strip().lower()
             if 'mora' in est or 'vencid' in est or 'atras' in est:
@@ -197,28 +198,28 @@ elif opcion_menu == "🔔 Alertas & Cobros":
 
         df_mora['clasificacion_simple'] = df_mora.apply(clasificar_estado_simple, axis=1)
 
-        # Métricas
+        # Métricas principales
         tot_mora = len(df_mora[df_mora['clasificacion_simple'] == "🔴 En Mora"])
         tot_aldia = len(df_mora[df_mora['clasificacion_simple'] == "🟢 Al Día"])
         deuda_mora = df_mora[df_mora['clasificacion_simple'] == "🔴 En Mora"]['deuda_total_pendiente'].sum()
 
         c_a1, c_a2, c_a3 = st.columns(3)
         c_a1.metric("Clientes Al Día", f"{tot_aldia}")
-        c_a2.metric("Clientes En Mora", f"{tot_mora}", delta=f"{tot_mora} alertas", delta_color="inverse")
-        c_a3.metric("Monto Total en Mora", f"${deuda_mora:,.0f} COP")
+        c_a2.metric("Clientes En Mora", f"{tot_mora}", delta=f"{tot_mora} casos", delta_color="inverse")
+        c_a3.metric("Monto Total Pendiente en Mora", f"${deuda_mora:,.0f} COP")
 
         st.markdown("---")
 
-        # Filtro único de dos opciones
+        # Filtro exclusivo de 2 opciones
         filtro_estado = st.radio(
-            "Selecciona el grupo a visualizar:",
+            "Selecciona el grupo a consultar:",
             options=["🔴 En Mora", "🟢 Al Día"],
             horizontal=True
         )
 
         df_filtrado = df_mora[df_mora['clasificacion_simple'] == filtro_estado]
 
-        st.subheader(f"📋 Lista de Clientes ({filtro_estado})")
+        st.subheader(f"📋 Registro de Clientes ({filtro_estado})")
 
         if df_filtrado.empty:
             st.info(f"No hay registros en la categoría {filtro_estado}.")
@@ -227,34 +228,34 @@ elif opcion_menu == "🔔 Alertas & Cobros":
                 deuda_val = row.get('deuda_total_pendiente', 0)
                 deuda_venc = row.get('deuda_vencida', 0)
 
-                with st.expander(f"{row['clasificacion_simple']} | {row['nombre']} - Crédito `{row['credito_id']}` | Deuda Total: ${deuda_val:,.0f} COP"):
+                with st.expander(f"{row['clasificacion_simple']} | {row['nombre']} - Crédito `{row['credito_id']}` | Pendiente: ${deuda_val:,.0f} COP"):
                     col_m1, col_m2 = st.columns([1, 1])
 
                     with col_m1:
                         st.write(f"**Cliente:** {row['nombre']}")
                         st.write(f"**Teléfono:** {row.get('telefono', 'N/A')}")
-                        st.write(f"**Estado registrado:** `{row.get('estado', 'N/A')}`")
+                        st.write(f"**Estado en Excel:** `{row.get('estado', 'N/A')}`")
                         st.write(f"**Capital Pendiente:** ${row.get('capital_pendiente', 0):,.0f} COP")
                         st.write(f"**Deuda Vencida:** ${deuda_venc:,.0f} COP")
                         st.write(f"**Deuda Total Pendiente:** ${deuda_val:,.0f} COP")
 
                     with col_m2:
-                        st.write("📲 **Mensaje Preventivo para WhatsApp:**")
+                        st.write("📲 **Aviso Preventivo WhatsApp:**")
 
                         if filtro_estado == "🔴 En Mora":
                             texto_base = (
                                 f"Hola *{row['nombre']}* 👋,\n\n"
                                 f"Te saludamos amablemente de *Entre Amigos Capital* 🤝.\n\n"
-                                f"Te escribimos para informarte que tu crédito *{row['credito_id']}* registra días de retraso / mora en su pago.\n\n"
-                                f"📌 *Valor Pendiente en Mora:* ${deuda_val:,.0f} COP\n\n"
-                                f"Te invitamos a realizar tu abono lo antes posible o informarnos cuándo podrías efectuarlo para mantener tu crédito al día. ¡Agradecemos tu atención!"
+                                f"Te escribimos para informarte de manera preventiva que tu crédito *{row['credito_id']}* registra días de mora / atraso en su pago.\n\n"
+                                f"📌 *Valor Pendiente:* ${deuda_val:,.0f} COP\n\n"
+                                f"Te invitamos a ponernos al día o confirmarnos la fecha en que podrías efectuar tu abono. ¡Agradecemos tu atención!"
                             )
                         else:
                             texto_base = (
                                 f"Hola *{row['nombre']}* 👋,\n\n"
                                 f"Te saludamos de *Entre Amigos Capital* 🤝.\n\n"
-                                f"Te recordamos que tu crédito *{row['credito_id']}* se encuentra al día con un saldo total de *${deuda_val:,.0f} COP*.\n\n"
-                                f"¡Gracias por tu compromiso y puntualidad!"
+                                f"Te confirmamos que tu crédito *{row['credito_id']}* se encuentra al día. Saldo total pendiente: *${deuda_val:,.0f} COP*.\n\n"
+                                f"¡Gracias por tu responsabilidad y compromiso!"
                             )
 
                         msg_editado = st.text_area("Editar mensaje antes de enviar:", value=texto_base, height=140, key=f"txt_{row['credito_id']}")
@@ -265,7 +266,7 @@ elif opcion_menu == "🔔 Alertas & Cobros":
 
                         msg_enc = urllib.parse.quote(msg_editado)
                         
-                        st.link_button("💬 Enviar Notificación por WhatsApp", f"https://wa.me/{num_tel}?text={msg_enc}", use_container_width=True)
+                        st.link_button("💬 Enviar Mensaje por WhatsApp", f"https://wa.me/{num_tel}?text={msg_enc}", use_container_width=True)
 
 
 # =========================================================
