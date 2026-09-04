@@ -7,72 +7,97 @@ import urllib.parse
 from fpdf import FPDF
 
 # ---------------------------------------------------------
-# CONFIGURACIÓN DE PÁGINA & ESTILO FINTECH MODO OSCURO
+# CONFIGURACIÓN DE PÁGINA & ESTILO FINTECH MODO OSCURO TOTAL
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Entre Amigos Capital - Dashboard",
     page_icon="🤝",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Estilos CSS personalizados para el Modo Oscuro Fintech con acentos naranjas
+# Estilos CSS avanzados para forzar fondo oscuro en todos los componentes de Streamlit
 st.markdown("""
     <style>
-    /* Fondo general de la aplicación */
-    .stApp {
-        background-color: #0E1117;
-        color: #E6EDF3;
+    /* 1. Forzar color de fondo principal en toda la aplicación */
+    .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"], [data-testid="stToolbar"], .main {
+        background-color: #0E1117 !important;
+        color: #E6EDF3 !important;
     }
-    
-    /* Sidebar estilizado */
-    [data-testid="stSidebar"] {
-        background-color: #161B22;
-        border-right: 1px solid #30363D;
+
+    /* 2. Tipografía general clara */
+    html, body, [class*="css"], p, span, label, h1, h2, h3, h4, h5, h6 {
+        color: #E6EDF3 !important;
+        font-family: 'Inter', sans-serif !important;
     }
-    
-    /* Tarjetas de métricas y contenedores ejecutivos */
+
+    /* 3. Barra lateral (Sidebar) totalmente oscura */
+    [data-testid="stSidebar"], [data-testid="stSidebarContent"] {
+        background-color: #161B22 !important;
+        border-right: 1px solid #30363D !important;
+    }
+    [data-testid="stSidebar"] * {
+        color: #E6EDF3 !important;
+    }
+
+    /* 4. Tarjetas de métricas ejecutivas */
     div[data-testid="stMetric"] {
-        background-color: #161B22;
-        border: 1px solid #30363D;
-        padding: 15px;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        background-color: #161B22 !important;
+        border: 1px solid #30363D !important;
+        padding: 16px !important;
+        border-radius: 12px !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
     }
-    
     div[data-testid="stMetric"] label {
         color: #8B949E !important;
-        font-weight: 500;
+        font-size: 0.85rem !important;
     }
-    
     div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
         color: #FF9933 !important;
-        font-weight: 700;
+        font-weight: 700 !important;
     }
 
-    /* Botones principales y de enlace */
+    /* 5. Botones y enlaces principales */
     .stButton > button, .stLinkButton > a {
-        background: linear-gradient(135deg, #FF7A00 0%, #FF9933 100%);
+        background: linear-gradient(135deg, #FF7A00 0%, #FF9933 100%) !important;
         color: #0E1117 !important;
-        font-weight: 600;
-        border: none;
-        border-radius: 8px;
-        padding: 0.5rem 1rem;
-        transition: all 0.3s ease;
+        font-weight: 700 !important;
+        border: none !important;
+        border-radius: 8px !important;
+        padding: 0.5rem 1rem !important;
+        transition: all 0.3s ease !important;
     }
-    
     .stButton > button:hover, .stLinkButton > a:hover {
-        opacity: 0.9;
-        box-shadow: 0 0 12px rgba(255, 122, 0, 0.4);
+        opacity: 0.9 !important;
+        box-shadow: 0 0 15px rgba(255, 122, 0, 0.5) !important;
     }
 
-    /* Pestañas y selectbox */
-    .stSelectbox, .stDateInput, .stNumberInput, .stTextInput {
-        border-radius: 8px;
+    /* 6. Campos de entrada (Inputs, Selectbox, Date, Number) */
+    .stSelectbox div[data-baseweb="select"] > div, 
+    .stDateInput input, .stNumberInput input, .stTextInput input, div[data-baseweb="input"] {
+        background-color: #161B22 !important;
+        color: #E6EDF3 !important;
+        border-color: #30363D !important;
+        border-radius: 8px !important;
     }
 
-    /* Líneas divisorias */
+    /* 7. Tablas de datos (Dataframes) */
+    [data-testid="stDataFrame"], .dataframe {
+        background-color: #161B22 !important;
+        border: 1px solid #30363D !important;
+        border-radius: 8px !important;
+    }
+
+    /* 8. Contenedores y expanders */
+    div[data-testid="stExpander"] {
+        background-color: #161B22 !important;
+        border: 1px solid #30363D !important;
+        border-radius: 8px !important;
+    }
+
+    /* 9. Líneas divisorias */
     hr {
-        border-color: #30363D;
+        border-color: #30363D !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -84,10 +109,10 @@ EXCEL_FILE_DEFAULT = "proyecto microcréditos copia 3.xlsx.xlsx"
 # ---------------------------------------------------------
 class ComprobantePDF(FPDF):
     def header(self):
-        self.set_fill_color(22, 27, 34)  # Fondo oscuro institucional PDF
+        self.set_fill_color(22, 27, 34)
         self.rect(0, 0, 210, 32, 'F')
         self.set_font("Arial", "B", 16)
-        self.set_text_color(255, 122, 0)  # Naranja corporativo
+        self.set_text_color(255, 122, 0)
         self.cell(0, 8, "Entre Amigos Capital", ln=True, align="C")
         self.set_font("Arial", "", 10)
         self.set_text_color(209, 216, 224)
@@ -99,14 +124,12 @@ def generar_pdf_comprobante(pago_info):
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
-    # Badge Recibo N°
-    pdf.set_fill_color(255, 122, 0)  # Naranja destacado
+    pdf.set_fill_color(255, 122, 0)
     pdf.set_text_color(14, 17, 23)
     pdf.set_font("Arial", "B", 11)
     pdf.cell(0, 8, f"RECIBO N°: {pago_info['pago_id']}", ln=True, align="C", fill=True)
     pdf.ln(4)
 
-    # 1. Datos Cliente
     pdf.set_text_color(255, 153, 51)
     pdf.set_font("Arial", "B", 11)
     pdf.cell(0, 6, "Datos del Cliente y Crédito", ln=True)
@@ -126,7 +149,6 @@ def generar_pdf_comprobante(pago_info):
     pdf.cell(0, 5, str(pago_info['medio_pago']), ln=True)
     pdf.ln(4)
 
-    # 2. Desglose
     pdf.set_text_color(255, 153, 51)
     pdf.set_font("Arial", "B", 11)
     pdf.cell(0, 6, "Desglose de la Transacción", ln=True)
@@ -146,7 +168,6 @@ def generar_pdf_comprobante(pago_info):
     pdf.cell(0, 7, f"${pago_info['valor_pago']:,.0f} COP", ln=True, align="R", fill=True)
     pdf.ln(4)
 
-    # 3. Estado Deuda
     pdf.set_text_color(255, 153, 51)
     pdf.set_font("Arial", "B", 11)
     pdf.cell(0, 6, "Estado Actualizado de la Deuda", ln=True)
@@ -343,7 +364,12 @@ if not df_creditos.empty:
             fig_pie = px.pie(df_estado, names="Estado", values="Cantidad", hole=0.4,
                              color="Estado",
                              color_discrete_map={"Al Día": "#FF9933", "En Mora": "#E74C3C"})
-            fig_pie.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#E6EDF3")
+            fig_pie.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)", 
+                plot_bgcolor="rgba(0,0,0,0)", 
+                font_color="#E6EDF3",
+                legend=dict(font=dict(color="#E6EDF3"))
+            )
             st.plotly_chart(fig_pie, use_container_width=True)
 
         with col_right:
@@ -416,7 +442,7 @@ if not df_creditos.empty:
                 st.dataframe(pagos_cliente[cols_validas], use_container_width=True)
 
     # =========================================================
-    # 3. REGISTRAR PAGO CON GENERACIÓN DE COMPROBANTE PDF Y WA
+    # 3. REGISTRAR PAGO
     # =========================================================
     elif opcion_menu == "📝 Registrar Pago":
         st.title("📝 Formulario de Registro de Pagos")
@@ -463,7 +489,6 @@ if not df_creditos.empty:
 
                 observaciones = st.text_input("Observaciones (opcional):", value="")
 
-                # ID automático
                 existentes_ids = st.session_state['df_pagos']['pago_id'].dropna().tolist()
                 nums = [int(str(x).replace('PAG', '')) for x in existentes_ids if str(x).startswith('PAG') and str(x).replace('PAG', '').isdigit()]
                 nuevo_num = max(nums) + 1 if nums else 1
@@ -495,10 +520,8 @@ if not df_creditos.empty:
                         'valor_cuota_calculado': 0
                     }
 
-                    # 1. ACTUALIZAR 'df_pagos'
                     st.session_state['df_pagos'] = pd.concat([st.session_state['df_pagos'], pd.DataFrame([nueva_fila_pago])], ignore_index=True)
 
-                    # 2. ACTUALIZAR 'Creditos'
                     idx_cred = df_creditos.index[df_creditos['credito_id'] == credito_id_pago].tolist()
                     if idx_cred:
                         ic = idx_cred[0]
@@ -508,7 +531,6 @@ if not df_creditos.empty:
                         if nuevo_saldo_cap == 0:
                             st.session_state['df_creditos'].loc[ic, 'estado_credito'] = "Finalizado"
 
-                    # 3. ACTUALIZAR 'Calendario_Intereses'
                     if not st.session_state['df_calendario'].empty and pago_interes > 0:
                         remanente_int = pago_interes
                         filas_cal = st.session_state['df_calendario'][st.session_state['df_calendario']['credito_id'] == credito_id_pago].index.tolist()
@@ -522,7 +544,6 @@ if not df_creditos.empty:
                                 st.session_state['df_calendario'].loc[idx_c, 'interes_pendiente'] -= abono
                                 remanente_int -= abono
 
-                    # 4. ACTUALIZAR 'Estado_Cartera'
                     nuevo_cap_pend = 0
                     nuevo_int_pend = 0
                     nueva_deuda_total = 0
@@ -554,7 +575,6 @@ if not df_creditos.empty:
 
                     st.success(f"✅ ¡Pago **{proximo_pago_id}** registrado exitosamente!")
 
-                    # Generar PDF con fpdf2
                     datos_pago_pdf = {
                         'pago_id': proximo_pago_id,
                         'cliente_id': cliente_id_pago,
@@ -588,7 +608,6 @@ if not df_creditos.empty:
                         )
 
                     with col_wa:
-                        # Utiliza directamente el nombre completo o diminutivo registrado en la BD para el trato cercano
                         nombre_w = cliente_pago
                         msg_wa = (
                             f"Hola *{nombre_w}* 😊 ¿Cómo estás?\n\n"
@@ -604,7 +623,6 @@ if not df_creditos.empty:
                         st.link_button("💬 Enviar Recordatorio por WhatsApp", f"https://wa.me/{num_tel}?text={msg_enc}", use_container_width=True)
 
         st.markdown("---")
-
         st.subheader("📥 Descargar Libro de Excel Actualizado")
         excel_bytes = exportar_excel_completo()
         st.download_button(
@@ -624,7 +642,7 @@ if not df_creditos.empty:
     # =========================================================
     elif opcion_menu == "⚖️ Gestión de Cobro":
         st.title("⚖️ Centro de Gestión de Cobro y Alertas")
-        st.markdown("Monitorea los créditos que se encuentran en mora, revisa los valores pendientes según la hoja `Estado_Cartera` y envía recordatorios de pago de forma inmediata.")
+        st.markdown("Monitorea los créditos que se encuentran en mora y envía recordatorios de pago de forma inmediata.")
         st.markdown("---")
 
         if not df_estado_cartera.empty and 'estado' in df_estado_cartera.columns:
@@ -659,9 +677,7 @@ if not df_creditos.empty:
                                 if len(num_tel) == 10 and not num_tel.startswith("57"):
                                     num_tel = "57" + num_tel
                                 
-                                # Utiliza directamente el nombre guardado en la base (ej. "Caro")
                                 nombre_w = nombre_cli
-                                
                                 msg_cobro = (
                                     f"Hola *{nombre_w}* 😊 ¿Cómo estás?\n\n"
                                     f"Te escribo solo para recordarte el pago pendiente de *${val_pend:,.0f} COP*. Cuando puedas, te agradezco que lo tengas presente. 🙌\n\n"
