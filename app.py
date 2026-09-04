@@ -5,36 +5,53 @@ from datetime import datetime
 import io
 import urllib.parse
 from fpdf import FPDF
+import os
 
 # ---------------------------------------------------------
-# CONFIGURACIÓN DE PÁGINA & ESTILO FINTECH MODO OSCURO TOTAL
+# 0. CONFIGURACIÓN NATIVA DE STREAMLIT (config.toml)
+# ---------------------------------------------------------
+os.makedirs('.streamlit', exist_ok=True)
+config_content = """
+[theme]
+base="dark"
+primaryColor="#00D26A"
+backgroundColor="#0A1118"
+secondaryBackgroundColor="#111B27"
+textColor="#E6EDF3"
+font="sans serif"
+"""
+with open('.streamlit/config.toml', 'w') as f:
+    f.write(config_content)
+
+# ---------------------------------------------------------
+# CONFIGURACIÓN DE PÁGINA & ESTILO FINTECH (Azul & Esmeralda)
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="Entre Amigos Capital - Dashboard",
-    page_icon="🤝",
+    page_title="Entre Amigos Capital - Fondo Familiar",
+    page_icon="💎",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Estilos CSS avanzados para forzar fondo oscuro en todos los componentes de Streamlit
+# Estilos CSS avanzados para unificar el diseño corporativo
 st.markdown("""
     <style>
-    /* 1. Forzar color de fondo principal en toda la aplicación */
+    /* 1. Fondo general de la aplicación */
     .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"], [data-testid="stToolbar"], .main {
-        background-color: #0E1117 !important;
+        background-color: #0A1118 !important;
         color: #E6EDF3 !important;
     }
 
-    /* 2. Tipografía general clara */
+    /* 2. Tipografía general */
     html, body, [class*="css"], p, span, label, h1, h2, h3, h4, h5, h6 {
         color: #E6EDF3 !important;
         font-family: 'Inter', sans-serif !important;
     }
 
-    /* 3. Barra lateral (Sidebar) totalmente oscura */
+    /* 3. Barra lateral (Sidebar) en Azul Marino Profundo */
     [data-testid="stSidebar"], [data-testid="stSidebarContent"] {
-        background-color: #161B22 !important;
-        border-right: 1px solid #30363D !important;
+        background-color: #111B27 !important;
+        border-right: 1px solid #1E2D3D !important;
     }
     [data-testid="stSidebar"] * {
         color: #E6EDF3 !important;
@@ -42,25 +59,25 @@ st.markdown("""
 
     /* 4. Tarjetas de métricas ejecutivas */
     div[data-testid="stMetric"] {
-        background-color: #161B22 !important;
-        border: 1px solid #30363D !important;
+        background-color: #111B27 !important;
+        border: 1px solid #1E2D3D !important;
         padding: 16px !important;
         border-radius: 12px !important;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
     }
     div[data-testid="stMetric"] label {
         color: #8B949E !important;
         font-size: 0.85rem !important;
     }
     div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
-        color: #FF9933 !important;
+        color: #00D26A !important;
         font-weight: 700 !important;
     }
 
-    /* 5. Botones y enlaces principales */
+    /* 5. Botones y enlaces principales (Verde Esmeralda Corporativo) */
     .stButton > button, .stLinkButton > a {
-        background: linear-gradient(135deg, #FF7A00 0%, #FF9933 100%) !important;
-        color: #0E1117 !important;
+        background: linear-gradient(135deg, #00A859 0%, #00D26A 100%) !important;
+        color: #0A1118 !important;
         font-weight: 700 !important;
         border: none !important;
         border-radius: 8px !important;
@@ -69,35 +86,34 @@ st.markdown("""
     }
     .stButton > button:hover, .stLinkButton > a:hover {
         opacity: 0.9 !important;
-        box-shadow: 0 0 15px rgba(255, 122, 0, 0.5) !important;
+        box-shadow: 0 0 15px rgba(0, 210, 106, 0.4) !important;
     }
 
-    /* 6. Campos de entrada (Inputs, Selectbox, Date, Number) */
+    /* 6. Campos de entrada */
     .stSelectbox div[data-baseweb="select"] > div, 
     .stDateInput input, .stNumberInput input, .stTextInput input, div[data-baseweb="input"] {
-        background-color: #161B22 !important;
+        background-color: #111B27 !important;
         color: #E6EDF3 !important;
-        border-color: #30363D !important;
+        border-color: #1E2D3D !important;
         border-radius: 8px !important;
     }
 
-    /* 7. Tablas de datos (Dataframes) */
+    /* 7. Tablas de datos */
     [data-testid="stDataFrame"], .dataframe {
-        background-color: #161B22 !important;
-        border: 1px solid #30363D !important;
+        background-color: #111B27 !important;
+        border: 1px solid #1E2D3D !important;
         border-radius: 8px !important;
     }
 
     /* 8. Contenedores y expanders */
     div[data-testid="stExpander"] {
-        background-color: #161B22 !important;
-        border: 1px solid #30363D !important;
+        background-color: #111B27 !important;
+        border: 1px solid #1E2D3D !important;
         border-radius: 8px !important;
     }
 
-    /* 9. Líneas divisorias */
     hr {
-        border-color: #30363D !important;
+        border-color: #1E2D3D !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -105,17 +121,17 @@ st.markdown("""
 EXCEL_FILE_DEFAULT = "proyecto microcréditos copia 3.xlsx.xlsx"
 
 # ---------------------------------------------------------
-# CLASE Y FUNCIÓN PARA GENERAR EL COMPROBANTE EN PDF (fpdf2)
+# CLASE PDF CON LA NUEVA PALETA INSTITUCIONAL
 # ---------------------------------------------------------
 class ComprobantePDF(FPDF):
     def header(self):
-        self.set_fill_color(22, 27, 34)
+        self.set_fill_color(17, 27, 39) # Azul Marino Fondo
         self.rect(0, 0, 210, 32, 'F')
         self.set_font("Arial", "B", 16)
-        self.set_text_color(255, 122, 0)
+        self.set_text_color(0, 210, 106) # Verde Esmeralda
         self.cell(0, 8, "Entre Amigos Capital", ln=True, align="C")
         self.set_font("Arial", "", 10)
-        self.set_text_color(209, 216, 224)
+        self.set_text_color(230, 237, 243)
         self.cell(0, 5, "Comprobante Oficial de Recaudo de Pago", ln=True, align="C")
         self.ln(10)
 
@@ -124,16 +140,16 @@ def generar_pdf_comprobante(pago_info):
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
-    pdf.set_fill_color(255, 122, 0)
-    pdf.set_text_color(14, 17, 23)
+    pdf.set_fill_color(0, 210, 106)
+    pdf.set_text_color(10, 17, 24)
     pdf.set_font("Arial", "B", 11)
     pdf.cell(0, 8, f"RECIBO N°: {pago_info['pago_id']}", ln=True, align="C", fill=True)
     pdf.ln(4)
 
-    pdf.set_text_color(255, 153, 51)
+    pdf.set_text_color(0, 210, 106)
     pdf.set_font("Arial", "B", 11)
     pdf.cell(0, 6, "Datos del Cliente y Crédito", ln=True)
-    pdf.set_draw_color(48, 54, 61)
+    pdf.set_draw_color(30, 45, 61)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(3)
 
@@ -149,7 +165,7 @@ def generar_pdf_comprobante(pago_info):
     pdf.cell(0, 5, str(pago_info['medio_pago']), ln=True)
     pdf.ln(4)
 
-    pdf.set_text_color(255, 153, 51)
+    pdf.set_text_color(0, 210, 106)
     pdf.set_font("Arial", "B", 11)
     pdf.cell(0, 6, "Desglose de la Transacción", ln=True)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
@@ -163,12 +179,12 @@ def generar_pdf_comprobante(pago_info):
     pdf.cell(0, 5, f"${pago_info['pago_capital']:,.0f} COP", ln=True, align="R")
     
     pdf.set_font("Arial", "B", 10)
-    pdf.set_fill_color(22, 27, 34)
+    pdf.set_fill_color(17, 27, 39)
     pdf.cell(120, 7, f"TOTAL RECIBIDO ({pago_info['concepto']}):", fill=True)
     pdf.cell(0, 7, f"${pago_info['valor_pago']:,.0f} COP", ln=True, align="R", fill=True)
     pdf.ln(4)
 
-    pdf.set_text_color(255, 153, 51)
+    pdf.set_text_color(0, 210, 106)
     pdf.set_font("Arial", "B", 11)
     pdf.cell(0, 6, "Estado Actualizado de la Deuda", ln=True)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
@@ -199,15 +215,23 @@ def generar_pdf_comprobante(pago_info):
     pdf.set_font("Arial", "I", 8)
     pdf.set_text_color(139, 148, 158)
     pdf.cell(0, 4, "Gracias por mantener tu crédito al día. Este documento sirve como soporte oficial de recaudo.", ln=True, align="C")
-    pdf.cell(0, 4, "Entre Amigos Capital - Créditos justos sobre la base de la confianza.", ln=True, align="C")
+    pdf.cell(0, 4, "Entre Amigos Capital - Crecimiento financiero basado en la confianza.", ln=True, align="C")
 
     return bytes(pdf.output())
 
 # ---------------------------------------------------------
-# MENÚ LATERAL & CARGADOR DE ARCHIVO
+# MENÚ LATERAL & BRANDING Y MISIÓN DEL FONDO
 # ---------------------------------------------------------
-st.sidebar.title("🤝 Entre Amigos Capital")
-st.sidebar.caption("Créditos justos sobre la base de la confianza")
+st.sidebar.title("💎 Entre Amigos Capital")
+st.sidebar.caption("Fondo de Inversión y Microcréditos Familiares")
+
+# Bloque personalizado de Misión en la barra lateral
+with st.sidebar.expander("📌 Nuestra Misión", expanded=False):
+    st.write(
+        "Fomentar el desarrollo económico y la colaboración financiera "
+        "dentro de nuestro círculo de confianza, ofreciendo liquidez ágil, "
+        "tasas justas y transparencia absoluta en cada operación."
+    )
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("📂 Base de Datos Excel")
@@ -361,9 +385,10 @@ if not df_creditos.empty:
                 "Estado": ["Al Día", "En Mora"],
                 "Cantidad": [creditos_aldia, creditos_mora]
             })
+            # Gráfico adaptado a verde esmeralda y rojo alerta
             fig_pie = px.pie(df_estado, names="Estado", values="Cantidad", hole=0.4,
                              color="Estado",
-                             color_discrete_map={"Al Día": "#FF9933", "En Mora": "#E74C3C"})
+                             color_discrete_map={"Al Día": "#00D26A", "En Mora": "#E74C3C"})
             fig_pie.update_layout(
                 paper_bgcolor="rgba(0,0,0,0)", 
                 plot_bgcolor="rgba(0,0,0,0)", 
@@ -446,7 +471,7 @@ if not df_creditos.empty:
     # =========================================================
     elif opcion_menu == "📝 Registrar Pago":
         st.title("📝 Formulario de Registro de Pagos")
-        st.markdown("Ingresa los datos del pago para actualizar las tablas de Excel y generar el comprobante PDF.")
+        st.markdown("Ingresa los datos del pago para actualizar las tablas de Excel y generar el comprobante PDF institucional.")
         st.markdown("---")
 
         col_f1, col_f2 = st.columns([1, 1])
@@ -611,16 +636,14 @@ if not df_creditos.empty:
                         nombre_w = cliente_pago
                         msg_wa = (
                             f"Hola *{nombre_w}* 😊 ¿Cómo estás?\n\n"
-                            f"Te escribo solo para recordarte el pago pendiente de *${valor_pago:,.0f} COP*. Cuando puedas, te agradezco que lo tengas presente. 🙌\n\n"
-                            f"Y cuando realices el pago, no olvides compartirnos el comprobante, porfa. 😊\n\n"
-                            f"¡Muchas gracias, {nombre_w}! 🤗"
+                            f"Te escribo para confirmarte el registro de tu pago por *${valor_pago:,.0f} COP* en Entre Amigos Capital. ¡Muchas gracias! 🙌"
                         )
                         num_tel = "".join(filter(str.isdigit, str(telefono_cliente)))
                         if len(num_tel) == 10 and not num_tel.startswith("57"):
                             num_tel = "57" + num_tel
                         msg_enc = urllib.parse.quote(msg_wa)
                         
-                        st.link_button("💬 Enviar Recordatorio por WhatsApp", f"https://wa.me/{num_tel}?text={msg_enc}", use_container_width=True)
+                        st.link_button("💬 Enviar Confirmación por WhatsApp", f"https://wa.me/{num_tel}?text={msg_enc}", use_container_width=True)
 
         st.markdown("---")
         st.subheader("📥 Descargar Libro de Excel Actualizado")
@@ -642,7 +665,7 @@ if not df_creditos.empty:
     # =========================================================
     elif opcion_menu == "⚖️ Gestión de Cobro":
         st.title("⚖️ Centro de Gestión de Cobro y Alertas")
-        st.markdown("Monitorea los créditos que se encuentran en mora y envía recordatorios de pago de forma inmediata.")
+        st.markdown("Monitorea los créditos que se encuentran en mora y envía recordatorios profesionales de pago de forma inmediata.")
         st.markdown("---")
 
         if not df_estado_cartera.empty and 'estado' in df_estado_cartera.columns:
@@ -680,9 +703,7 @@ if not df_creditos.empty:
                                 nombre_w = nombre_cli
                                 msg_cobro = (
                                     f"Hola *{nombre_w}* 😊 ¿Cómo estás?\n\n"
-                                    f"Te escribo solo para recordarte el pago pendiente de *${val_pend:,.0f} COP*. Cuando puedas, te agradezco que lo tengas presente. 🙌\n\n"
-                                    f"Y cuando realices el pago, no olvides compartirnos el comprobante, porfa. 😊\n\n"
-                                    f"¡Muchas gracias, {nombre_w}! 🤗"
+                                    f"Te escribo desde Entre Amigos Capital para recordarte el saldo pendiente por valor de *${val_pend:,.0f} COP*. Agradecemos tu apoyo para mantener el fondo al día. 🙌"
                                 )
                                 msg_enc = urllib.parse.quote(msg_cobro)
                                 st.link_button("💬 Enviar Cobro WA", f"https://wa.me/{num_tel}?text={msg_enc}", use_container_width=True)
@@ -734,7 +755,7 @@ if not df_creditos.empty:
     # 6. SOBRE NOSOTROS & POLÍTICAS
     # =========================================================
     elif opcion_menu == "ℹ️ Sobre Nosotros & Políticas":
-        st.title("🤝 Sobre Entre Amigos Capital")
+        st.title("💎 Sobre Entre Amigos Capital")
         st.markdown("---")
         st.subheader("💡 Nuestra Propuesta de Valor")
-        st.write("Acceso a microcréditos ágiles para familiares y amigos a tasas justas (3% mensual).")
+        st.write("Acceso a microcréditos ágiles para familiares y amigos a tasas justas (3% mensual), fomentando la economía colaborativa.")
