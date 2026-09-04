@@ -168,14 +168,6 @@ df_pagos = st.session_state['df_pagos']
 df_estado_cartera = st.session_state['df_estado_cartera']
 df_calendario = st.session_state['df_calendario']
 
-# ---------------------------------------------------------
-# COMPROBACIÓN RÁPIDA DE MORA PARA ALERTAS EN BARRA LATERAL
-# ---------------------------------------------------------
-if not df_estado_cartera.empty and 'estado' in df_estado_cartera.columns:
-    mora_check = df_estado_cartera[df_estado_cartera['estado'].astype(str).str.contains('mora', case=False, na=False)]
-    if not mora_check.empty:
-        st.sidebar.error(f"🚨 ¡Atención! Hay {len(mora_check)} crédito(s) en MORA.")
-
 st.sidebar.markdown("---")
 
 opcion_menu = st.sidebar.radio(
@@ -567,7 +559,7 @@ if not df_creditos.empty:
         st.dataframe(st.session_state['df_pagos'][cols_p].tail(10), use_container_width=True)
 
     # =========================================================
-    # 4. GESTIÓN DE COBRO (NUEVO MÓDULO)
+    # 4. GESTIÓN DE COBRO
     # =========================================================
     elif opcion_menu == "⚖️ Gestión de Cobro":
         st.title("⚖️ Centro de Gestión de Cobro y Alertas")
