@@ -7,13 +7,75 @@ import urllib.parse
 from fpdf import FPDF
 
 # ---------------------------------------------------------
-# CONFIGURACIÓN DE PÁGINA
+# CONFIGURACIÓN DE PÁGINA & ESTILO FINTECH MODO OSCURO
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Entre Amigos Capital - Dashboard",
     page_icon="🤝",
     layout="wide"
 )
+
+# Estilos CSS personalizados para el Modo Oscuro Fintech con acentos naranjas
+st.markdown("""
+    <style>
+    /* Fondo general de la aplicación */
+    .stApp {
+        background-color: #0E1117;
+        color: #E6EDF3;
+    }
+    
+    /* Sidebar estilizado */
+    [data-testid="stSidebar"] {
+        background-color: #161B22;
+        border-right: 1px solid #30363D;
+    }
+    
+    /* Tarjetas de métricas y contenedores ejecutivos */
+    div[data-testid="stMetric"] {
+        background-color: #161B22;
+        border: 1px solid #30363D;
+        padding: 15px;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+    
+    div[data-testid="stMetric"] label {
+        color: #8B949E !important;
+        font-weight: 500;
+    }
+    
+    div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
+        color: #FF9933 !important;
+        font-weight: 700;
+    }
+
+    /* Botones principales y de enlace */
+    .stButton > button, .stLinkButton > a {
+        background: linear-gradient(135deg, #FF7A00 0%, #FF9933 100%);
+        color: #0E1117 !important;
+        font-weight: 600;
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        transition: all 0.3s ease;
+    }
+    
+    .stButton > button:hover, .stLinkButton > a:hover {
+        opacity: 0.9;
+        box-shadow: 0 0 12px rgba(255, 122, 0, 0.4);
+    }
+
+    /* Pestañas y selectbox */
+    .stSelectbox, .stDateInput, .stNumberInput, .stTextInput {
+        border-radius: 8px;
+    }
+
+    /* Líneas divisorias */
+    hr {
+        border-color: #30363D;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 EXCEL_FILE_DEFAULT = "proyecto microcréditos copia 3.xlsx.xlsx"
 
@@ -22,10 +84,10 @@ EXCEL_FILE_DEFAULT = "proyecto microcréditos copia 3.xlsx.xlsx"
 # ---------------------------------------------------------
 class ComprobantePDF(FPDF):
     def header(self):
-        self.set_fill_color(27, 54, 93)  # Azul oscuro institucional
+        self.set_fill_color(22, 27, 34)  # Fondo oscuro institucional PDF
         self.rect(0, 0, 210, 32, 'F')
         self.set_font("Arial", "B", 16)
-        self.set_text_color(255, 255, 255)
+        self.set_text_color(255, 122, 0)  # Naranja corporativo
         self.cell(0, 8, "Entre Amigos Capital", ln=True, align="C")
         self.set_font("Arial", "", 10)
         self.set_text_color(209, 216, 224)
@@ -38,22 +100,22 @@ def generar_pdf_comprobante(pago_info):
     pdf.set_auto_page_break(auto=True, margin=15)
     
     # Badge Recibo N°
-    pdf.set_fill_color(39, 174, 96)  # Verde
-    pdf.set_text_color(255, 255, 255)
+    pdf.set_fill_color(255, 122, 0)  # Naranja destacado
+    pdf.set_text_color(14, 17, 23)
     pdf.set_font("Arial", "B", 11)
     pdf.cell(0, 8, f"RECIBO N°: {pago_info['pago_id']}", ln=True, align="C", fill=True)
     pdf.ln(4)
 
     # 1. Datos Cliente
-    pdf.set_text_color(27, 54, 93)
+    pdf.set_text_color(255, 153, 51)
     pdf.set_font("Arial", "B", 11)
     pdf.cell(0, 6, "Datos del Cliente y Crédito", ln=True)
-    pdf.set_draw_color(52, 152, 219)
+    pdf.set_draw_color(48, 54, 61)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(3)
 
     pdf.set_font("Arial", "", 10)
-    pdf.set_text_color(44, 62, 80)
+    pdf.set_text_color(230, 237, 243)
     pdf.cell(50, 5, "Cliente:", 0)
     pdf.cell(0, 5, f"{pago_info['cliente_nombre']} ({pago_info['cliente_id']})", ln=True)
     pdf.cell(50, 5, "Crédito N°:", 0)
@@ -65,46 +127,46 @@ def generar_pdf_comprobante(pago_info):
     pdf.ln(4)
 
     # 2. Desglose
-    pdf.set_text_color(27, 54, 93)
+    pdf.set_text_color(255, 153, 51)
     pdf.set_font("Arial", "B", 11)
     pdf.cell(0, 6, "Desglose de la Transacción", ln=True)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(3)
 
     pdf.set_font("Arial", "", 10)
-    pdf.set_text_color(44, 62, 80)
+    pdf.set_text_color(230, 237, 243)
     pdf.cell(120, 5, "Abono a Intereses:", 0)
     pdf.cell(0, 5, f"${pago_info['pago_interes']:,.0f} COP", ln=True, align="R")
     pdf.cell(120, 5, "Abono a Capital:", 0)
     pdf.cell(0, 5, f"${pago_info['pago_capital']:,.0f} COP", ln=True, align="R")
     
     pdf.set_font("Arial", "B", 10)
-    pdf.set_fill_color(241, 242, 246)
+    pdf.set_fill_color(22, 27, 34)
     pdf.cell(120, 7, f"TOTAL RECIBIDO ({pago_info['concepto']}):", fill=True)
     pdf.cell(0, 7, f"${pago_info['valor_pago']:,.0f} COP", ln=True, align="R", fill=True)
     pdf.ln(4)
 
     # 3. Estado Deuda
-    pdf.set_text_color(27, 54, 93)
+    pdf.set_text_color(255, 153, 51)
     pdf.set_font("Arial", "B", 11)
     pdf.cell(0, 6, "Estado Actualizado de la Deuda", ln=True)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(3)
 
     pdf.set_font("Arial", "", 10)
-    pdf.set_text_color(44, 62, 80)
+    pdf.set_text_color(230, 237, 243)
     pdf.cell(50, 5, "Capital Pendiente:", 0)
     pdf.cell(0, 5, f"${pago_info['nuevo_cap_pend']:,.0f} COP", ln=True)
     pdf.cell(50, 5, "Intereses Pendientes:", 0)
     pdf.cell(0, 5, f"${pago_info['nuevo_int_pend']:,.0f} COP", ln=True)
     
     pdf.set_font("Arial", "B", 10)
-    pdf.set_text_color(192, 57, 43)
+    pdf.set_text_color(231, 76, 60)
     pdf.cell(50, 5, "Deuda Total Pendiente:", 0)
     pdf.cell(0, 5, f"${pago_info['nueva_deuda_total']:,.0f} COP", ln=True)
 
     pdf.set_font("Arial", "", 10)
-    pdf.set_text_color(44, 62, 80)
+    pdf.set_text_color(230, 237, 243)
     pdf.cell(50, 5, "Estado del Crédito:", 0)
     pdf.cell(0, 5, str(pago_info['nuevo_estado']), ln=True)
 
@@ -114,7 +176,7 @@ def generar_pdf_comprobante(pago_info):
 
     pdf.ln(10)
     pdf.set_font("Arial", "I", 8)
-    pdf.set_text_color(127, 140, 141)
+    pdf.set_text_color(139, 148, 158)
     pdf.cell(0, 4, "Gracias por mantener tu crédito al día. Este documento sirve como soporte oficial de recaudo.", ln=True, align="C")
     pdf.cell(0, 4, "Entre Amigos Capital - Créditos justos sobre la base de la confianza.", ln=True, align="C")
 
@@ -280,7 +342,8 @@ if not df_creditos.empty:
             })
             fig_pie = px.pie(df_estado, names="Estado", values="Cantidad", hole=0.4,
                              color="Estado",
-                             color_discrete_map={"Al Día": "#2ecc71", "En Mora": "#e74c3c"})
+                             color_discrete_map={"Al Día": "#FF9933", "En Mora": "#E74C3C"})
+            fig_pie.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#E6EDF3")
             st.plotly_chart(fig_pie, use_container_width=True)
 
         with col_right:
