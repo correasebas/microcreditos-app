@@ -168,6 +168,14 @@ df_pagos = st.session_state['df_pagos']
 df_estado_cartera = st.session_state['df_estado_cartera']
 df_calendario = st.session_state['df_calendario']
 
+# ---------------------------------------------------------
+# COMPROBACIÓN RÁPIDA DE MORA PARA ALERTAS EN BARRA LATERAL
+# ---------------------------------------------------------
+if not df_estado_cartera.empty and 'estado' in df_estado_cartera.columns:
+    mora_check = df_estado_cartera[df_estado_cartera['estado'].astype(str).str.contains('mora', case=False, na=False)]
+    if not mora_check.empty:
+        st.sidebar.error(f"🚨 ¡Atención! Hay {len(mora_check)} crédito(s) en MORA.")
+
 st.sidebar.markdown("---")
 
 opcion_menu = st.sidebar.radio(
@@ -239,6 +247,38 @@ if not df_creditos.empty:
     # =========================================================
     if opcion_menu == "📊 Dashboard General":
         st.title("📊 Control General de Cartera")
+        st.markdown("---")
+
+        # --- SECCIÓN DE ALERTAS Y CONTROLES DE MORA (NUEVO) ---
+        if not df_estado_cartera.empty and 'estado' in df_estado_cartera.columns:
+            # Cruzar con nombres de clientes para mostrar alertas claras
+            df_mora_detalle = df_estado_cartera.merge(df_clientes[['cliente_id', 'nombre', 'telefono']], on='cliente_id', how='left')
+            df_mora_activa = df_mora_detalle[df_mora_detalle['estado'].astype(str).str.contains('mora', case=False, na=False)]
+
+            if not df_mora_activa.empty:
+                st.error("🚨 **CENTRO DE ALERTAS: CLIENTES EN MORA PENDIENTES DE PAGO**")
+                for _, row in df_mora_activa.iterrows():
+                    nombre_cli = row.get('nombre', 'Desconocido')
+                    val_pend = row.get('deuda_vencida', 0)
+                    if val_pend == 0:
+                        val_pend = row.get('deuda_total_pendiente', 0)
+                    cred_id = row.get('credito_id', 'N/A')
+                    tel_cli = row.get('telefono', '')
+
+                    col_alerta_txt, col_alerta_btn = st.columns([3, 1])
+                    with col_alerta_txt:
+                        st.warning(f"⚠️ El cliente **{nombre_cli}** (Crédito: `{cred_id}`) presenta un estado de **Mora**. Tiene un pago pendiente por un valor de **${val_pend:,.0f} COP**.")
+                    with col_alerta_btn:
+                        if tel_cli:
+                            num_tel = "".join(filter(str.isdigit, str(tel_cli)))
+                            if len(num_tel) == 10 and not num_tel.startswith("57"):
+                                num_tel = "57" + num_tel
+                            msg_cobro = f"Hola *{nombre_cli}* 👋, te saludamos de *Entre Amigos Capital*. Te recordamos que tienes un pago pendiente en mora por valor de *${val_pend:,.0f} COP*. Agradecemos tu pronta gestión. 🤝"
+                            msg_enc = urllib.parse.quote(msg_cobro)
+                            st.link_button("💬 Enviar Cobro WA", f"https://wa.me/{num_tel}?text={msg_enc}", use_container_width=True)
+            else:
+                st.success("🟢 **Control de Cartera:** ¡Excelente noticia! No hay créditos en mora actualmente en la hoja `Estado_Cartera`.")
+
         st.markdown("---")
 
         df_res = recalcular_resumen_cartera()
@@ -314,7 +354,7 @@ if not df_creditos.empty:
             tiene_mora = any(cartera_cliente['estado'].astype(str).str.contains('mora', case=False, na=False)) if not cartera_cliente.empty else False
 
             if tiene_mora or deuda_vencida > 0:
-                st.error(f"⚠️ **Cliente con Cuotas/Intereses Vencidos:** Presenta una mora de **${deuda_vencida:,.0f} COP**.")
+                st.error(f"⚠️ **Alerta Individual - En Mora:** Este cliente presenta cuotas vencidas por un valor total de **${deuda_vencida:,.0f} COP** (Deuda total pendiente: ${deuda_total:,.0f} COP).")
             elif deuda_total == 0:
                 st.success("🟢 **Paz y Salvo:** El cliente no presenta saldos pendientes.")
             else:
