@@ -14,6 +14,18 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
+# INICIALIZACIÓN DE SESSION STATE (PREVIENE KEYERROR)
+# ---------------------------------------------------------
+if 'df_clientes' not in st.session_state:
+    st.session_state['df_clientes'] = pd.DataFrame()
+if 'df_creditos' not in st.session_state:
+    st.session_state['df_creditos'] = pd.DataFrame()
+if 'df_estado_cartera' not in st.session_state:
+    st.session_state['df_estado_cartera'] = pd.DataFrame()
+if 'df_historico_pagos' not in st.session_state:
+    st.session_state['df_historico_pagos'] = pd.DataFrame()
+
+# ---------------------------------------------------------
 # CARGA DE DATOS (EXCEL)
 # ---------------------------------------------------------
 st.sidebar.title("🤝 Entre Amigos Capital")
@@ -28,25 +40,13 @@ if uploaded_file is not None:
         xls = pd.ExcelFile(uploaded_file)
         
         # Cargar pestañas
-        df_clientes = pd.read_excel(xls, 'Clientes') if 'Clientes' in xls.sheet_names else pd.DataFrame()
-        df_creditos = pd.read_excel(xls, 'Creditos') if 'Creditos' in xls.sheet_names else pd.DataFrame()
-        df_estado_cartera = pd.read_excel(xls, 'Estado_Cartera') if 'Estado_Cartera' in xls.sheet_names else pd.DataFrame()
-        df_historico_pagos = pd.read_excel(xls, 'Historico_Pagos') if 'Historico_Pagos' in xls.sheet_names else pd.DataFrame()
-        
-        st.session_state['df_clientes'] = df_clientes
-        st.session_state['df_creditos'] = df_creditos
-        st.session_state['df_estado_cartera'] = df_estado_cartera
-        st.session_state['df_historico_pagos'] = df_historico_pagos
+        st.session_state['df_clientes'] = pd.read_excel(xls, 'Clientes') if 'Clientes' in xls.sheet_names else pd.DataFrame()
+        st.session_state['df_creditos'] = pd.read_excel(xls, 'Creditos') if 'Creditos' in xls.sheet_names else pd.DataFrame()
+        st.session_state['df_estado_cartera'] = pd.read_excel(xls, 'Estado_Cartera') if 'Estado_Cartera' in xls.sheet_names else pd.DataFrame()
+        st.session_state['df_historico_pagos'] = pd.read_excel(xls, 'Historico_Pagos') if 'Historico_Pagos' in xls.sheet_names else pd.DataFrame()
         
     except Exception as e:
         st.sidebar.error(f"Error al cargar el archivo Excel: {e}")
-else:
-    # Inicializar DataFrames vacíos si no hay archivo cargado
-    if 'df_clientes' not in st.session_state:
-        st.session_state['df_clientes'] = pd.DataFrame()
-        st.session_state['df_creditos'] = pd.DataFrame()
-        st.session_state['df_estado_cartera'] = pd.DataFrame()
-        st.session_state['df_historico_pagos'] = pd.DataFrame()
 
 # NAVEGACIÓN PRINCIPAL
 st.sidebar.markdown("---")
@@ -62,7 +62,7 @@ opcion_menu = st.sidebar.radio(
     ]
 )
 
-# Recuperar DataFrames desde session_state
+# Recuperar DataFrames desde session_state de forma segura
 df_clientes = st.session_state['df_clientes']
 df_creditos = st.session_state['df_creditos']
 df_estado_cartera = st.session_state['df_estado_cartera']
@@ -177,7 +177,7 @@ elif opcion_menu == "📝 Registrar Pago":
 
 
 # =========================================================
-# 4. ALERTAS DE MORA Y GESTIÓN DE COBROS (CORREGIDO)
+# 4. ALERTAS DE MORA Y GESTIÓN DE COBROS
 # =========================================================
 elif opcion_menu == "🔔 Alertas & Cobros":
     st.title("🔔 Alertas de Mora y Gestión de Cobros")
@@ -185,7 +185,7 @@ elif opcion_menu == "🔔 Alertas & Cobros":
     st.markdown("---")
 
     if df_estado_cartera.empty:
-        st.info("No hay información disponible en la tabla de estado de cartera.")
+        st.info("No hay información disponible en la tabla de estado de cartera. Carga tu archivo Excel en la barra lateral.")
     else:
         # Unir Estado_Cartera con Clientes y Créditos
         df_mora = df_estado_cartera.merge(
@@ -203,15 +203,10 @@ elif opcion_menu == "🔔 Alertas & Cobros":
         if df_mora.empty:
             st.success("🎉 ¡Excelente! Toda la cartera está al día y en paz y salvo.")
         else:
-            # -----------------------------------------------------
-            # CÁLCULO Y EVALUACIÓN DE DÍAS DE MORA
-            # -----------------------------------------------------
             def obtener_dias_mora(row):
-                # 1. Si la columna 'dias_mora' existe en el Excel y es > 0, usarla
                 if 'dias_mora' in row and pd.notnull(row['dias_mora']) and float(row['dias_mora']) > 0:
                     return int(row['dias_mora'])
                 
-                # 2. Si el texto del campo 'estado' indica mora, asignar días por defecto si no vienen especificados
                 estado_str = str(row.get('estado', '')).lower()
                 if 'mora' in estado_str or 'vencid' in estado_str or 'atras' in estado_str:
                     return 15
@@ -220,7 +215,6 @@ elif opcion_menu == "🔔 Alertas & Cobros":
 
             df_mora['dias_mora_calculados'] = df_mora.apply(obtener_dias_mora, axis=1)
 
-            # Clasificación por categoría
             df_mora['nivel_riesgo'] = df_mora['dias_mora_calculados'].apply(
                 lambda d: "🟢 Al Día / Preventivo" if d <= 0 
                 else ("🟡 Retraso Leve (1-30 días)" if d <= 30 
@@ -228,7 +222,6 @@ elif opcion_menu == "🔔 Alertas & Cobros":
                 else "🔴 Retraso Alto (>60 días)"))
             )
 
-            # Métrica global
             tot_clientes_mora = len(df_mora[df_mora['dias_mora_calculados'] > 0])
             monto_pendiente = df_mora['deuda_total_pendiente'].sum()
             max_dias = df_mora['dias_mora_calculados'].max()
@@ -241,7 +234,6 @@ elif opcion_menu == "🔔 Alertas & Cobros":
 
             st.markdown("---")
 
-            # Filtro multiselect (incluye todas las opciones seleccionadas por defecto)
             filtro_nivel = st.multiselect(
                 "Filtrar por Nivel de Retraso:",
                 options=["🟢 Al Día / Preventivo", "🟡 Retraso Leve (1-30 días)", "🟠 Retraso Medio (31-60 días)", "🔴 Retraso Alto (>60 días)"],
