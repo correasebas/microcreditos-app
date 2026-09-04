@@ -525,15 +525,13 @@ if not df_creditos.empty:
                         )
 
                     with col_wa:
-                        # Extraer solo el primer nombre en diminutivo o cercano
                         nombre_base = cliente_pago.split()[0]
-                        # Versión coloquial para el mensaje de confirmación de pago
+                        # Plantilla exacta solicitada para notificación de pago
                         msg_wa = (
-                            f"Hola mi *{nombre_base}* 😊 ¿Cómo vas?\n\n"
-                            f"Te paso por aquí el datito de tu pagocito de *${valor_pago:,.0f} COP* registrado en *Entre Amigos Capital* 🤝:\n"
-                            f"🔹 *Recibito N°:* {proximo_pago_id}\n"
-                            f"🔹 *Saldito Restante:* ${nueva_deuda_total:,.0f} COP\n\n"
-                            f"¡Mil gracias por estar al día, {nombre_base}! 🤗"
+                            f"Hola *{nombre_base}* 😊 ¿Cómo estás?\n\n"
+                            f"Te escribo solo para confirmarte el registro de tu pago por *${valor_pago:,.0f} COP*. Cuando puedas, te agradezco que lo tengas presente. 🙌\n\n"
+                            f"Y cuando realices el pago, no olvides compartirnos el comprobante, porfa. 😊\n\n"
+                            f"¡Muchas gracias, {nombre_base}! 🤗"
                         )
                         num_tel = "".join(filter(str.isdigit, str(telefono_cliente)))
                         if len(num_tel) == 10 and not num_tel.startswith("57"):
@@ -567,7 +565,6 @@ if not df_creditos.empty:
         st.markdown("---")
 
         if not df_estado_cartera.empty and 'estado' in df_estado_cartera.columns:
-            # Cruzar con nombres de clientes para mostrar alertas claras
             df_mora_detalle = df_estado_cartera.merge(df_clientes[['cliente_id', 'nombre', 'telefono']], on='cliente_id', how='left')
             df_mora_activa = df_mora_detalle[df_mora_detalle['estado'].astype(str).str.contains('mora', case=False, na=False)]
 
@@ -599,15 +596,14 @@ if not df_creditos.empty:
                                 if len(num_tel) == 10 and not num_tel.startswith("57"):
                                     num_tel = "57" + num_tel
                                 
-                                # Tomar solo el primer nombre
                                 nombre_base = nombre_cli.split()[0]
                                 
-                                # Plantilla coloquial y en diminutivo solicitada
+                                # Plantilla exacta solicitada para gestión de cobro
                                 msg_cobro = (
                                     f"Hola *{nombre_base}* 😊 ¿Cómo estás?\n\n"
-                                    f"Te escribo solo para recordarte el pagocito pendiente de *${val_pend:,.0f} COP*. Cuando puedas, te agradezco que lo tengas presente. 🙌\n\n"
-                                    f"Y cuando realices el paguito, no olvides compartirnos el comprobantecito, porfa. 😊\n\n"
-                                    f"¡Muchísimas gracias, {nombre_base}! 🤗"
+                                    f"Te escribo solo para recordarte el pago pendiente de *${val_pend:,.0f} COP*. Cuando puedas, te agradezco que lo tengas presente. 🙌\n\n"
+                                    f"Y cuando realices el pago, no olvides compartirnos el comprobante, porfa. 😊\n\n"
+                                    f"¡Muchas gracias, {nombre_base}! 🤗"
                                 )
                                 msg_enc = urllib.parse.quote(msg_cobro)
                                 st.link_button("💬 Enviar Cobro WA", f"https://wa.me/{num_tel}?text={msg_enc}", use_container_width=True)
