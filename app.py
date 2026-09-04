@@ -21,35 +21,41 @@ def load_data():
         df_clientes = pd.read_excel(xls, sheet_name='Clientes')
         df_creditos = pd.read_excel(xls, sheet_name='Creditos')
         df_pagos = pd.read_excel(xls, sheet_name='Pagos')
-        
-        df_estado_cartera = pd.read_excel(xls, sheet_name='Estado_Cartera') if 'Estado_Cartera' in xls.sheet_names else None
-        df_resumen = pd.read_excel(xls, sheet_name='Resumen_Cartera') if 'Resumen_Cartera' in xls.sheet_names else None
-        df_calendario = pd.read_excel(xls, sheet_name='Calendario_Intereses') if 'Calendario_Intereses' in xls.sheet_names else None
+        df_estado_cartera = pd.read_excel(xls, sheet_name='Estado_Cartera') if 'Estado_Cartera' in xls.sheet_names else pd.DataFrame()
+        df_resumen = pd.read_excel(xls, sheet_name='Resumen_Cartera') if 'Resumen_Cartera' in xls.sheet_names else pd.DataFrame()
+        df_calendario = pd.read_excel(xls, sheet_name='Calendario_Intereses') if 'Calendario_Intereses' in xls.sheet_names else pd.DataFrame()
 
         return df_clientes, df_creditos, df_pagos, df_estado_cartera, df_resumen, df_calendario
     except Exception as e:
         st.error(f"Error al cargar el archivo de Excel: {e}")
         return None, None, None, None, None, None
 
-df_clientes, df_creditos, df_pagos_init, df_estado_cartera_init, df_resumen_init, df_calendario = load_data()
+df_clientes_init, df_creditos_init, df_pagos_init, df_estado_cartera_init, df_resumen_init, df_calendario_init = load_data()
 
-# Inicializar estado de sesión
+# Inicializar st.session_state para mantener persistenes todas las tablas en memoria
+if 'df_clientes' not in st.session_state:
+    st.session_state['df_clientes'] = df_clientes_init.copy() if df_clientes_init is not None else pd.DataFrame()
+if 'df_creditos' not in st.session_state:
+    st.session_state['df_creditos'] = df_creditos_init.copy() if df_creditos_init is not None else pd.DataFrame()
 if 'df_pagos' not in st.session_state:
     st.session_state['df_pagos'] = df_pagos_init.copy() if df_pagos_init is not None else pd.DataFrame()
-
 if 'df_estado_cartera' not in st.session_state:
     st.session_state['df_estado_cartera'] = df_estado_cartera_init.copy() if df_estado_cartera_init is not None else pd.DataFrame()
+if 'df_calendario' not in st.session_state:
+    st.session_state['df_calendario'] = df_calendario_init.copy() if df_calendario_init is not None else pd.DataFrame()
 
+df_clientes = st.session_state['df_clientes']
+df_creditos = st.session_state['df_creditos']
 df_pagos = st.session_state['df_pagos']
 df_estado_cartera = st.session_state['df_estado_cartera']
+df_calendario = st.session_state['df_calendario']
 
 # ---------------------------------------------------------
-# FUNCIÓN DE RECALCULO GENERAL DE CARTERA
+# FUNCIÓN DE RECALCULO DE RESUMEN DE CARTERA
 # ---------------------------------------------------------
 def recalcular_resumen_cartera():
-    """Recalcula los indicadores generales del dashboard basados en el estado actual."""
-    if df_creditos is None or df_estado_cartera.empty:
-        return None
+    if df_creditos.empty or df_estado_cartera.empty:
+        return pd.DataFrame()
     
     cap_prestado = df_creditos['capital_inicial'].sum()
     cap_pagado = df_estado_cartera['capital_pagado'].sum()
@@ -77,35 +83,33 @@ def recalcular_resumen_cartera():
     }
     return pd.DataFrame(data_resumen)
 
-# Función para exportar todo el libro de Excel con los nuevos datos actualizados
+# Exportar todas las hojas actualizadas a Excel
 def exportar_excel_completo():
     output = io.BytesIO()
     df_resumen_actualizado = recalcular_resumen_cartera()
     
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        if df_clientes is not None:
+        if not df_clientes.empty:
             df_clientes.to_excel(writer, sheet_name='Clientes', index=False)
-        if df_creditos is not None:
-            df_creditos.to_excel(writer, sheet_name='Creditos', index=False)
-        
-        # Limpiar columnas Unnamed antes de exportar
-        cols_pagos = [c for c in st.session_state['df_pagos'].columns if not str(c).startswith('Unnamed')]
-        st.session_state['df_pagos'][cols_pagos].to_excel(writer, sheet_name='Pagos', index=False)
-        
-        if not st.session_state['df_estado_cartera'].empty:
-            cols_ec = [c for c in st.session_state['df_estado_cartera'].columns if not str(c).startswith('Unnamed')]
-            st.session_state['df_estado_cartera'][cols_ec].to_excel(writer, sheet_name='Estado_Cartera', index=False)
-            
-        if df_calendario is not None:
-            df_calendario.to_excel(writer, sheet_name='Calendario_Intereses', index=False)
-            
-        if df_resumen_actualizado is not None:
+        if not df_creditos.empty:
+            cols_cred = [c for c in df_creditos.columns if not str(c).startswith('Unnamed')]
+            df_creditos[cols_cred].to_excel(writer, sheet_name='Creditos', index=False)
+        if not df_pagos.empty:
+            cols_pagos = [c for c in df_pagos.columns if not str(c).startswith('Unnamed')]
+            df_pagos[cols_pagos].to_excel(writer, sheet_name='Pagos', index=False)
+        if not df_estado_cartera.empty:
+            cols_ec = [c for c in df_estado_cartera.columns if not str(c).startswith('Unnamed')]
+            df_estado_cartera[cols_ec].to_excel(writer, sheet_name='Estado_Cartera', index=False)
+        if not df_calendario.empty:
+            cols_cal = [c for c in df_calendario.columns if not str(c).startswith('Unnamed')]
+            df_calendario[cols_cal].to_excel(writer, sheet_name='Calendario_Intereses', index=False)
+        if not df_resumen_actualizado.empty:
             df_resumen_actualizado.to_excel(writer, sheet_name='Resumen_Cartera', index=False)
             
     return output.getvalue()
 
 # ---------------------------------------------------------
-# MENÚ DE NAVEGACIÓN LATERAL
+# MENÚ LATERAL
 # ---------------------------------------------------------
 st.sidebar.title("🤝 Entre Amigos Capital")
 st.sidebar.caption("Créditos justos sobre la base de la confianza")
@@ -115,7 +119,7 @@ opcion_menu = st.sidebar.radio(
     ["📊 Dashboard General", "👤 Ficha por Cliente", "📝 Registrar Pago", "🧮 Simulador de Créditos", "ℹ️ Sobre Nosotros & Políticas"]
 )
 
-if df_creditos is not None:
+if not df_creditos.empty:
 
     # =========================================================
     # 1. DASHBOARD GENERAL
@@ -125,17 +129,17 @@ if df_creditos is not None:
         st.markdown("---")
 
         df_res = recalcular_resumen_cartera()
-        dict_res = dict(zip(df_res['Indicador'], df_res['Resultado'])) if df_res is not None else {}
+        dict_res = dict(zip(df_res['Indicador'], df_res['Resultado'])) if not df_res.empty else {}
 
-        val_prestado = dict_res.get('Capital total prestado', 23900000)
-        val_pagado = dict_res.get('Capital pagado', 3033328)
-        val_cap_pendiente = dict_res.get('Capital pendiente', 20866672)
-        val_int_pendiente = dict_res.get('Intereses pendientes', 775000)
-        val_deuda_total = dict_res.get('Deuda total pendiente', 21641672)
-        val_deuda_vencida = dict_res.get('Deuda vencida', 1827500)
-        creditos_activos = dict_res.get('Créditos activos', 14)
-        creditos_mora = dict_res.get('Créditos en mora', 10)
-        creditos_aldia = dict_res.get('Créditos al día', 4)
+        val_prestado = dict_res.get('Capital total prestado', 0)
+        val_pagado = dict_res.get('Capital pagado', 0)
+        val_cap_pendiente = dict_res.get('Capital pendiente', 0)
+        val_int_pendiente = dict_res.get('Intereses pendientes', 0)
+        val_deuda_total = dict_res.get('Deuda total pendiente', 0)
+        val_deuda_vencida = dict_res.get('Deuda vencida', 0)
+        creditos_activos = dict_res.get('Créditos activos', 0)
+        creditos_mora = dict_res.get('Créditos en mora', 0)
+        creditos_aldia = dict_res.get('Créditos al día', 0)
 
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Capital Total Prestado", f"${val_prestado:,.0f} COP")
@@ -168,7 +172,8 @@ if df_creditos is not None:
 
         with col_right:
             st.subheader("Detalle de Créditos Registrados")
-            st.dataframe(df_creditos, use_container_width=True)
+            cols_show = [c for c in df_creditos.columns if not str(c).startswith('Unnamed')]
+            st.dataframe(df_creditos[cols_show], use_container_width=True)
 
     # =========================================================
     # 2. FICHA POR CLIENTE
@@ -196,7 +201,7 @@ if df_creditos is not None:
             tiene_mora = any(cartera_cliente['estado'].astype(str).str.contains('mora', case=False, na=False)) if not cartera_cliente.empty else False
 
             if tiene_mora or deuda_vencida > 0:
-                st.error(f"⚠️ **Cliente con Cuotas/Intereses Vencidos:** Presenta un valor en mora de **${deuda_vencida:,.0f} COP**.")
+                st.error(f"⚠️ **Cliente con Cuotas/Intereses Vencidos:** Presenta una mora de **${deuda_vencida:,.0f} COP**.")
             elif deuda_total == 0:
                 st.success("🟢 **Paz y Salvo:** El cliente no presenta saldos pendientes.")
             else:
@@ -224,32 +229,29 @@ if df_creditos is not None:
 
             st.markdown("---")
             
-            st.subheader("Créditos de este Cliente")
+            st.subheader("Créditos del Cliente")
             if not creditos_cliente.empty:
-                st.dataframe(creditos_cliente, use_container_width=True)
-            else:
-                st.info("Este cliente no tiene créditos registrados.")
+                cols_c = [c for c in creditos_cliente.columns if not str(c).startswith('Unnamed')]
+                st.dataframe(creditos_cliente[cols_c], use_container_width=True)
 
-            st.subheader("Historial de Pagos de este Cliente")
+            st.subheader("Historial de Pagos")
             if not pagos_cliente.empty:
                 cols_validas = [c for c in pagos_cliente.columns if not str(c).startswith('Unnamed')]
                 st.dataframe(pagos_cliente[cols_validas], use_container_width=True)
-            else:
-                st.info("Este cliente no registra pagos en el sistema.")
 
     # =========================================================
-    # 3. REGISTRAR PAGO (CON RECALCULO AUTOMÁTICO DE HOJAS)
+    # 3. REGISTRAR PAGO (ACTUALIZACIÓN EN CADENA)
     # =========================================================
     elif opcion_menu == "📝 Registrar Pago":
         st.title("📝 Formulario de Registro de Pagos")
-        st.markdown("Ingresa los datos del recaudo recibido para registrarlo y actualizar automáticamente el sistema.")
+        st.markdown("Ingresa los datos del pago para actualizar todas las tablas de Excel en cadena.")
         st.markdown("---")
 
         col_f1, col_f2 = st.columns([1, 1])
 
         with col_f1:
             lista_cli = df_clientes['nombre'].dropna().unique()
-            cliente_pago = st.selectbox("Selecciona el cliente que realiza el pago:", lista_cli)
+            cliente_pago = st.selectbox("Selecciona el cliente:", lista_cli)
 
             info_cli_pago = df_clientes[df_clientes['nombre'] == cliente_pago].iloc[0]
             cliente_id_pago = info_cli_pago['cliente_id']
@@ -257,7 +259,7 @@ if df_creditos is not None:
             creditos_cli = df_creditos[df_creditos['cliente_id'] == cliente_id_pago]
 
             if creditos_cli.empty:
-                st.warning("Este cliente no tiene créditos registrados para asociar el pago.")
+                st.warning("Este cliente no tiene créditos activos registrados.")
             else:
                 opciones_credito = [f"{row['credito_id']} - Capital: ${row['capital_inicial']:,.0f} ({row['modalidad']})" for _, row in creditos_cli.iterrows()]
                 credito_sel_str = st.selectbox("Selecciona el Crédito:", opciones_credito)
@@ -270,7 +272,7 @@ if df_creditos is not None:
                 concepto = st.selectbox("Concepto del Pago:", ["Intereses", "Abono a Capital", "Intereses y capital"])
 
         with col_f2:
-            st.subheader("⚙️ Desglose y Confirmación")
+            st.subheader("⚙️ Desglose del Pago")
             
             if not creditos_cli.empty:
                 if concepto == "Intereses":
@@ -285,23 +287,23 @@ if df_creditos is not None:
 
                 observaciones = st.text_input("Observaciones (opcional):", value="")
 
-                st.markdown("### Resumen a Guardar:")
+                st.markdown("### Resumen a Procesar:")
                 st.write(f"• **Cliente:** {cliente_pago} (`{cliente_id_pago}`)")
                 st.write(f"• **Crédito:** `{credito_id_pago}`")
                 st.write(f"• **Fecha:** {fecha_pago}")
-                st.write(f"• **Medio de Pago:** {medio_pago}")
-                st.write(f"• **Monto Total:** ${valor_pago:,.0f} COP")
-                st.write(f"  - Pago a Interés: **${pago_interes:,.0f} COP**")
-                st.write(f"  - Pago a Capital: **${pago_capital:,.0f} COP**")
+                st.write(f"• **Abono a Intereses:** ${pago_interes:,.0f} COP")
+                st.write(f"• **Abono a Capital:** ${pago_capital:,.0f} COP")
 
-                if st.button("💾 Guardar Pago y Recalcular Cartera", type="primary"):
-                    # 1. Generar nuevo pago_id
-                    existentes_ids = st.session_state['df_pagos']['pago_id'].dropna().tolist()
+                if st.button("💾 Registrar Pago y Actualizar Excel Completo", type="primary"):
+                    # ----------------------------------------------------
+                    # 1. ACTUALIZAR 'Pagos'
+                    # ----------------------------------------------------
+                    existentes_ids = df_pagos['pago_id'].dropna().tolist()
                     nums = [int(str(x).replace('PAG', '')) for x in existentes_ids if str(x).startswith('PAG') and str(x).replace('PAG', '').isdigit()]
                     nuevo_num = max(nums) + 1 if nums else 1
                     nuevo_pago_id = f"PAG{nuevo_num:03d}"
 
-                    nueva_fila = {
+                    nueva_fila_pago = {
                         'pago_id': nuevo_pago_id,
                         'credito_id': credito_id_pago,
                         'cliente_id': cliente_id_pago,
@@ -316,44 +318,66 @@ if df_creditos is not None:
                         'interes_adicional': 0,
                         'valor_cuota_calculado': 0
                     }
+                    st.session_state['df_pagos'] = pd.concat([df_pagos, pd.DataFrame([nueva_fila_pago])], ignore_index=True)
 
-                    # Actualizar df_pagos
-                    st.session_state['df_pagos'] = pd.concat([st.session_state['df_pagos'], pd.DataFrame([nueva_fila])], ignore_index=True)
+                    # ----------------------------------------------------
+                    # 2. ACTUALIZAR 'Creditos' (saldo_capital y estado)
+                    # ----------------------------------------------------
+                    idx_cred = df_creditos.index[df_creditos['credito_id'] == credito_id_pago].tolist()
+                    if idx_cred:
+                        ic = idx_cred[0]
+                        saldo_cap_prev = df_creditos.loc[ic, 'saldo_capital'] if pd.notnull(df_creditos.loc[ic, 'saldo_capital']) else df_creditos.loc[ic, 'capital_inicial']
+                        nuevo_saldo_cap = max(0, saldo_cap_prev - pago_capital)
+                        st.session_state['df_creditos'].loc[ic, 'saldo_capital'] = nuevo_saldo_cap
+                        if nuevo_saldo_cap == 0:
+                            st.session_state['df_creditos'].loc[ic, 'estado_credito'] = "Finalizado"
 
-                    # 2. Actualizar df_estado_cartera para ese crédito
-                    idx = st.session_state['df_estado_cartera'].index[st.session_state['df_estado_cartera']['credito_id'] == credito_id_pago].tolist()
-                    if idx:
-                        i = idx[0]
-                        
-                        # Actualizar capital
-                        st.session_state['df_estado_cartera'].loc[i, 'capital_pagado'] += pago_capital
-                        nuevo_cap_pend = max(0, st.session_state['df_estado_cartera'].loc[i, 'capital_pendiente'] - pago_capital)
-                        st.session_state['df_estado_cartera'].loc[i, 'capital_pendiente'] = nuevo_cap_pend
+                    # ----------------------------------------------------
+                    # 3. ACTUALIZAR 'Calendario_Intereses'
+                    # ----------------------------------------------------
+                    if not df_calendario.empty and pago_interes > 0:
+                        remanente_int = pago_interes
+                        filas_cal = df_calendario[df_calendario['credito_id'] == credito_id_pago].index.tolist()
+                        for idx_c in filas_cal:
+                            if remanente_int <= 0:
+                                break
+                            int_pend = df_calendario.loc[idx_c, 'interes_pendiente']
+                            if int_pend > 0:
+                                abono = min(remanente_int, int_pend)
+                                st.session_state['df_calendario'].loc[idx_c, 'interes_pagado'] += abono
+                                st.session_state['df_calendario'].loc[idx_c, 'interes_pendiente'] -= abono
+                                remanente_int -= abono
 
-                        # Actualizar intereses
-                        nuevo_int_pend = max(0, st.session_state['df_estado_cartera'].loc[i, 'interes_pendiente'] - pago_interes)
-                        st.session_state['df_estado_cartera'].loc[i, 'interes_pendiente'] = nuevo_int_pend
+                    # ----------------------------------------------------
+                    # 4. ACTUALIZAR 'Estado_Cartera'
+                    # ----------------------------------------------------
+                    idx_ec = df_estado_cartera.index[df_estado_cartera['credito_id'] == credito_id_pago].tolist()
+                    if idx_ec:
+                        ie = idx_ec[0]
+                        st.session_state['df_estado_cartera'].loc[ie, 'capital_pagado'] += pago_capital
+                        nuevo_cap_pend = max(0, st.session_state['df_estado_cartera'].loc[ie, 'capital_pendiente'] - pago_capital)
+                        st.session_state['df_estado_cartera'].loc[ie, 'capital_pendiente'] = nuevo_cap_pend
 
-                        # Actualizar deuda vencida
-                        nuevo_vencido = max(0, st.session_state['df_estado_cartera'].loc[i, 'deuda_vencida'] - (pago_interes + pago_capital))
-                        st.session_state['df_estado_cartera'].loc[i, 'deuda_vencida'] = nuevo_vencido
+                        nuevo_int_pend = max(0, st.session_state['df_estado_cartera'].loc[ie, 'interes_pendiente'] - pago_interes)
+                        st.session_state['df_estado_cartera'].loc[ie, 'interes_pendiente'] = nuevo_int_pend
 
-                        # Actualizar total pendiente
+                        nuevo_vencido = max(0, st.session_state['df_estado_cartera'].loc[ie, 'deuda_vencida'] - (pago_interes + pago_capital))
+                        st.session_state['df_estado_cartera'].loc[ie, 'deuda_vencida'] = nuevo_vencido
+
                         nueva_deuda_total = nuevo_cap_pend + nuevo_int_pend
-                        st.session_state['df_estado_cartera'].loc[i, 'deuda_total_pendiente'] = nueva_deuda_total
+                        st.session_state['df_estado_cartera'].loc[ie, 'deuda_total_pendiente'] = nueva_deuda_total
 
-                        # Estado del crédito
                         if nueva_deuda_total == 0:
-                            st.session_state['df_estado_cartera'].loc[i, 'estado'] = "Paz y salvo"
+                            st.session_state['df_estado_cartera'].loc[ie, 'estado'] = "Paz y salvo"
                         elif nuevo_vencido == 0:
-                            st.session_state['df_estado_cartera'].loc[i, 'estado'] = "Al día"
+                            st.session_state['df_estado_cartera'].loc[ie, 'estado'] = "Al día"
 
-                    st.success(f"✅ ¡Pago **{nuevo_pago_id}** registrado y cartera recalculada con éxito!")
+                    st.success(f"✅ ¡Pago **{nuevo_pago_id}** registrado! Se han actualizado todas las hojas del Excel.")
 
         st.markdown("---")
 
-        st.subheader("📥 Guardar y Descargar Excel Completamente Actualizado")
-        st.markdown("Al hacer clic abajo, se descargará el libro de Excel con **todas sus hojas actualizadas** (`Pagos`, `Estado_Cartera` y `Resumen_Cartera`):")
+        st.subheader("📥 Descargar Libro de Excel Actualizado")
+        st.markdown("Haz clic abajo para obtener la versión del archivo con todas las hojas de cartera recalculadas:")
 
         excel_bytes = exportar_excel_completo()
         st.download_button(
@@ -365,15 +389,14 @@ if df_creditos is not None:
 
         st.markdown("---")
         st.subheader("📋 Últimos Pagos Registrados")
-        cols_validas = [c for c in st.session_state['df_pagos'].columns if not str(c).startswith('Unnamed')]
-        st.dataframe(st.session_state['df_pagos'][cols_validas].tail(10), use_container_width=True)
+        cols_p = [c for c in st.session_state['df_pagos'].columns if not str(c).startswith('Unnamed')]
+        st.dataframe(st.session_state['df_pagos'][cols_p].tail(10), use_container_width=True)
 
     # =========================================================
     # 4. SIMULADOR DE CRÉDITOS
     # =========================================================
     elif opcion_menu == "🧮 Simulador de Créditos":
-        st.title("🧮 Simulador de Créditos - Entre Amigos Capital")
-        st.markdown("Calcule la cuota estimada a una **tasa fija del 3% mensual**.")
+        st.title("🧮 Simulador de Créditos")
         st.markdown("---")
 
         col_sim1, col_sim2 = st.columns(2)
@@ -411,21 +434,5 @@ if df_creditos is not None:
     elif opcion_menu == "ℹ️ Sobre Nosotros & Políticas":
         st.title("🤝 Sobre Entre Amigos Capital")
         st.markdown("---")
-
         st.subheader("💡 Nuestra Propuesta de Valor")
-        st.write("Acceso a microcréditos ágiles para familiares y amigos a **tasas justas (3% mensual)**, sin sanciones ocultas y bajo el principio de buena fe.")
-
-        st.subheader("📜 Políticas de Crédito")
-        col_p1, col_p2 = st.columns(2)
-        with col_p1:
-            st.markdown("""
-            **Montos y Plazos**
-            * Desde $100.000 hasta $5.000.000 COP.
-            * Modalidades: Interés mensual + Capital final / Cuota fija.
-            """)
-        with col_p2:
-            st.markdown("""
-            **Pagos y Mora**
-            * Medios: Transferencia (Nequi/Bancolombia) o Efectivo.
-            * Cero sanciones financieras por mora.
-            """)
+        st.write("Acceso a microcréditos ágiles para familiares y amigos a tasas justas (3% mensual).")
