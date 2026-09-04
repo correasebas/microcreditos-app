@@ -3,7 +3,6 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import io
-import os
 
 # Configuración inicial de la página
 st.set_page_config(
@@ -12,13 +11,27 @@ st.set_page_config(
     layout="wide"
 )
 
-EXCEL_FILE = "proyecto microcréditos copia 3.xlsx.xlsx"
+EXCEL_FILE_DEFAULT = "proyecto microcréditos copia 3.xlsx.xlsx"
 
-@st.cache_data
-def load_data():
-    """Carga todas las hojas del archivo de Excel."""
+# ---------------------------------------------------------
+# MENÚ LATERAL & CARGADOR DE ARCHIVO (Opción 2)
+# ---------------------------------------------------------
+st.sidebar.title("🤝 Entre Amigos Capital")
+st.sidebar.caption("Créditos justos sobre la base de la confianza")
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("📂 Base de Datos Excel")
+uploaded_file = st.sidebar.file_uploader(
+    "Carga tu archivo de Excel actualizado:", 
+    type=["xlsx"],
+    help="Si no subes un archivo, se cargará el archivo base por defecto."
+)
+
+@st.cache_data(show_spinner=False)
+def load_data_from_file(file_source):
+    """Carga todas las hojas del archivo de Excel (subido o por defecto)."""
     try:
-        xls = pd.ExcelFile(EXCEL_FILE)
+        xls = pd.ExcelFile(file_source)
         df_clientes = pd.read_excel(xls, sheet_name='Clientes')
         df_creditos = pd.read_excel(xls, sheet_name='Creditos')
         df_pagos = pd.read_excel(xls, sheet_name='Pagos')
@@ -31,25 +44,32 @@ def load_data():
         st.error(f"Error al cargar el archivo de Excel: {e}")
         return None, None, None, None, None, None
 
-df_clientes_init, df_creditos_init, df_pagos_init, df_estado_cartera_init, df_resumen_init, df_calendario_init = load_data()
+# Fuente de datos: archivo subido o el predeterminado
+file_to_load = uploaded_file if uploaded_file is not None else EXCEL_FILE_DEFAULT
 
-# Inicializar st.session_state para mantener persistentes las tablas en memoria
-if 'df_clientes' not in st.session_state:
-    st.session_state['df_clientes'] = df_clientes_init.copy() if df_clientes_init is not None else pd.DataFrame()
-if 'df_creditos' not in st.session_state:
-    st.session_state['df_creditos'] = df_creditos_init.copy() if df_creditos_init is not None else pd.DataFrame()
-if 'df_pagos' not in st.session_state:
-    st.session_state['df_pagos'] = df_pagos_init.copy() if df_pagos_init is not None else pd.DataFrame()
-if 'df_estado_cartera' not in st.session_state:
-    st.session_state['df_estado_cartera'] = df_estado_cartera_init.copy() if df_estado_cartera_init is not None else pd.DataFrame()
-if 'df_calendario' not in st.session_state:
-    st.session_state['df_calendario'] = df_calendario_init.copy() if df_calendario_init is not None else pd.DataFrame()
+# Control de reinicio si el usuario sube un nuevo archivo
+if 'current_loaded_file' not in st.session_state or st.session_state['current_loaded_file'] != file_to_load:
+    df_c, df_cr, df_p, df_ec, df_res, df_cal = load_data_from_file(file_to_load)
+    
+    st.session_state['df_clientes'] = df_c if df_c is not None else pd.DataFrame()
+    st.session_state['df_creditos'] = df_cr if df_cr is not None else pd.DataFrame()
+    st.session_state['df_pagos'] = df_p if df_p is not None else pd.DataFrame()
+    st.session_state['df_estado_cartera'] = df_ec if df_ec is not None else pd.DataFrame()
+    st.session_state['df_calendario'] = df_cal if df_cal is not None else pd.DataFrame()
+    st.session_state['current_loaded_file'] = file_to_load
 
 df_clientes = st.session_state['df_clientes']
 df_creditos = st.session_state['df_creditos']
 df_pagos = st.session_state['df_pagos']
 df_estado_cartera = st.session_state['df_estado_cartera']
 df_calendario = st.session_state['df_calendario']
+
+st.sidebar.markdown("---")
+
+opcion_menu = st.sidebar.radio(
+    "Selecciona una sección:",
+    ["📊 Dashboard General", "👤 Ficha por Cliente", "📝 Registrar Pago", "🧮 Simulador de Créditos", "ℹ️ Sobre Nosotros & Políticas"]
+)
 
 # ---------------------------------------------------------
 # FUNCIÓN DE RECALCULO DE RESUMEN DE CARTERA
@@ -84,7 +104,7 @@ def recalcular_resumen_cartera():
     }
     return pd.DataFrame(data_resumen)
 
-# Exportar todas las hojas actualizadas a Excel
+# Exportar todas las hojas actualizadas a Bytes
 def exportar_excel_completo():
     output = io.BytesIO()
     df_resumen_actualizado = recalcular_resumen_cartera()
@@ -92,9 +112,9 @@ def exportar_excel_completo():
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         if not df_clientes.empty:
             df_clientes.to_excel(writer, sheet_name='Clientes', index=False)
-        if not df_creditos.empty:
-            cols_cred = [c for c in df_creditos.columns if not str(c).startswith('Unnamed')]
-            df_creditos[cols_cred].to_excel(writer, sheet_name='Creditos', index=False)
+        if not st.session_state['df_creditos'].empty:
+            cols_cred = [c for c in st.session_state['df_creditos'].columns if not str(c).startswith('Unnamed')]
+            st.session_state['df_creditos'][cols_cred].to_excel(writer, sheet_name='Creditos', index=False)
         if not st.session_state['df_pagos'].empty:
             cols_pagos = [c for c in st.session_state['df_pagos'].columns if not str(c).startswith('Unnamed')]
             st.session_state['df_pagos'][cols_pagos].to_excel(writer, sheet_name='Pagos', index=False)
@@ -108,17 +128,6 @@ def exportar_excel_completo():
             df_resumen_actualizado.to_excel(writer, sheet_name='Resumen_Cartera', index=False)
             
     return output.getvalue()
-
-# ---------------------------------------------------------
-# MENÚ LATERAL
-# ---------------------------------------------------------
-st.sidebar.title("🤝 Entre Amigos Capital")
-st.sidebar.caption("Créditos justos sobre la base de la confianza")
-
-opcion_menu = st.sidebar.radio(
-    "Selecciona una sección:",
-    ["📊 Dashboard General", "👤 Ficha por Cliente", "📝 Registrar Pago", "🧮 Simulador de Créditos", "ℹ️ Sobre Nosotros & Políticas"]
-)
 
 if not df_creditos.empty:
 
@@ -268,7 +277,7 @@ if not df_creditos.empty:
 
                 fecha_pago = st.date_input("Fecha del Pago:", datetime.today())
                 
-                # MODIFICACIÓN: Solamente Transferencia y Efectivo
+                # Opciones únicamente Transferencia y Efectivo
                 medio_pago = st.selectbox("Medio de Pago:", ["Transferencia", "Efectivo"])
 
                 valor_pago = st.number_input("Valor Pagado (COP):", min_value=1000, value=90000, step=5000, format="%d")
@@ -290,7 +299,7 @@ if not df_creditos.empty:
 
                 observaciones = st.text_input("Observaciones (opcional):", value="")
 
-                # CALCULAR PRÓXIMO ID DE PAGO (PAG069, etc.)
+                # CALCULAR PRÓXIMO ID DE PAGO AUTOMÁTICO (Ej. PAG069, PAG070...)
                 existentes_ids = st.session_state['df_pagos']['pago_id'].dropna().tolist()
                 nums = [int(str(x).replace('PAG', '')) for x in existentes_ids if str(x).startswith('PAG') and str(x).replace('PAG', '').isdigit()]
                 nuevo_num = max(nums) + 1 if nums else 1
@@ -305,7 +314,7 @@ if not df_creditos.empty:
                 st.write(f"• **Abono a Intereses:** ${pago_interes:,.0f} COP")
                 st.write(f"• **Abono a Capital:** ${pago_capital:,.0f} COP")
 
-                if st.button("💾 Registrar Pago y Actualizar Excel Completo", type="primary"):
+                if st.button("💾 Registrar Pago en Memoria", type="primary"):
                     nueva_fila_pago = {
                         'pago_id': proximo_pago_id,
                         'credito_id': credito_id_pago,
@@ -322,7 +331,7 @@ if not df_creditos.empty:
                         'valor_cuota_calculado': 0
                     }
 
-                    # 1. ACTUALIZAR 'df_pagos' en la sesión
+                    # 1. ACTUALIZAR 'df_pagos'
                     st.session_state['df_pagos'] = pd.concat([st.session_state['df_pagos'], pd.DataFrame([nueva_fila_pago])], ignore_index=True)
 
                     # 2. ACTUALIZAR 'Creditos'
@@ -371,12 +380,13 @@ if not df_creditos.empty:
                         elif nuevo_vencido == 0:
                             st.session_state['df_estado_cartera'].loc[ie, 'estado'] = "Al día"
 
-                    st.success(f"✅ ¡Pago **{proximo_pago_id}** registrado exitosamente!")
+                    st.success(f"✅ ¡Pago **{proximo_pago_id}** registrado exitosamente en esta sesión!")
+                    st.info("📌 Recuerda descargar la versión actualizada del Excel al finalizar la jornada desde el botón inferior.")
 
         st.markdown("---")
 
         st.subheader("📥 Descargar Libro de Excel Actualizado")
-        st.markdown("Para mantener la copia de respaldo sincronizada, descarga aquí el archivo con todas las hojas actualizadas:")
+        st.markdown("Haz clic aquí para descargar el archivo de Excel con los nuevos pagos y tablas actualizadas:")
 
         excel_bytes = exportar_excel_completo()
         st.download_button(
