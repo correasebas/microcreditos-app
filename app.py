@@ -21,17 +21,15 @@ def load_data():
         df_creditos = pd.read_excel(xls, sheet_name='Creditos')
         df_pagos = pd.read_excel(xls, sheet_name='Pagos')
         
-        if 'Resumen_Cartera' in xls.sheet_names:
-            df_resumen = pd.read_excel(xls, sheet_name='Resumen_Cartera')
-        else:
-            df_resumen = None
+        df_estado_cartera = pd.read_excel(xls, sheet_name='Estado_Cartera') if 'Estado_Cartera' in xls.sheet_names else None
+        df_resumen = pd.read_excel(xls, sheet_name='Resumen_Cartera') if 'Resumen_Cartera' in xls.sheet_names else None
 
-        return df_clientes, df_creditos, df_pagos, df_resumen
+        return df_clientes, df_creditos, df_pagos, df_estado_cartera, df_resumen
     except Exception as e:
         st.error(f"Error al cargar el archivo de Excel: {e}")
-        return None, None, None, None
+        return None, None, None, None, None
 
-df_clientes, df_creditos, df_pagos, df_resumen = load_data()
+df_clientes, df_creditos, df_pagos, df_estado_cartera, df_resumen = load_data()
 
 # ---------------------------------------------------------
 # MENÚ DE NAVEGACIÓN LATERAL
@@ -53,7 +51,6 @@ if df_creditos is not None:
         st.title("📊 Control General de Cartera")
         st.markdown("---")
 
-        # Valores predeterminados por si acaso
         val_prestado = 23900000
         val_pagado = 3033328
         val_cap_pendiente = 20866672
@@ -79,7 +76,6 @@ if df_creditos is not None:
             except:
                 pass
 
-        # Tarjetas principales de KPI
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Capital Total Prestado", f"${val_prestado:,.0f} COP")
         c2.metric("Capital Pagado", f"${val_pagado:,.0f} COP")
@@ -114,34 +110,64 @@ if df_creditos is not None:
             st.dataframe(df_creditos, use_container_width=True)
 
     # =========================================================
-    # 2. FICHA POR CLIENTE (FILTRADO EXACTO POR CLIENTE_ID)
+    # 2. FICHA POR CLIENTE (CON ESTADO DE MORA Y CAPITAL/INTERÉS)
     # =========================================================
     elif opcion_menu == "👤 Ficha por Cliente":
-        st.title("👤 Ficha de Cliente e Historial de Confianza")
+        st.title("👤 Ficha de Cliente e Historial de Deuda")
         st.markdown("---")
 
         lista_clientes = df_clientes['nombre'].dropna().unique()
         cliente_sel = st.selectbox("Selecciona un cliente:", lista_clientes)
 
         if cliente_sel:
-            # Obtener datos del cliente
             info_cliente = df_clientes[df_clientes['nombre'] == cliente_sel].iloc[0]
             cliente_id = info_cliente['cliente_id']
 
-            # Filtrar Créditos y Pagos por cliente_id
             creditos_cliente = df_creditos[df_creditos['cliente_id'] == cliente_id]
             pagos_cliente = df_pagos[df_pagos['cliente_id'] == cliente_id]
+            
+            # Obtener datos financieros desde Estado_Cartera
+            if df_estado_cartera is not None:
+                cartera_cliente = df_estado_cartera[df_estado_cartera['cliente_id'] == cliente_id]
+            else:
+                cartera_cliente = pd.DataFrame()
 
-            st.subheader("Información Registrada")
+            cap_pendiente = cartera_cliente['capital_pendiente'].sum() if not cartera_cliente.empty else 0
+            int_pendiente = cartera_cliente['interes_pendiente'].sum() if not cartera_cliente.empty else 0
+            deuda_vencida = cartera_cliente['deuda_vencida'].sum() if not cartera_cliente.empty else 0
+            deuda_total = cartera_cliente['deuda_total_pendiente'].sum() if not cartera_cliente.empty else 0
+
+            # Determinar si tiene créditos en mora
+            tiene_mora = any(cartera_cliente['estado'].astype(str).str.contains('mora', case=False, na=False)) if not cartera_cliente.empty else False
+
+            # Muestra de Estado
+            if tiene_mora or deuda_vencida > 0:
+                st.error(f"⚠️ **Cliente con Cuotas/Intereses Vencidos:** Presenta un valor en mora de **${deuda_vencida:,.0f} COP**.")
+            elif deuda_total == 0:
+                st.success("🟢 **Paz y Salvo:** El cliente no presenta saldos pendientes.")
+            else:
+                st.info("🟢 **Al Día:** El cliente cuenta con sus cuotas e intereses al día.")
+
+            # Tarjetas de resumen del cliente
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Capital Pendiente", f"${cap_pendiente:,.0f} COP")
+            m2.metric("Intereses Pendientes", f"${int_pendiente:,.0f} COP")
+            m3.metric("Deuda Vencida (Mora)", f"${deuda_vencida:,.0f} COP")
+            m4.metric("Deuda Total Pendiente", f"${deuda_total:,.0f} COP")
+
+            st.markdown("---")
+
             col_a, col_b = st.columns(2)
             with col_a:
+                st.subheader("Información Personal")
                 st.write(f"**ID Cliente:** {cliente_id}")
                 st.write(f"**Nombre:** {info_cliente.get('nombre', 'N/A')}")
                 st.write(f"**Teléfono:** {info_cliente.get('telefono', 'N/A')}")
             with col_b:
+                st.subheader("Relación y Registro")
                 st.write(f"**Fecha Registro:** {info_cliente.get('fecha_registro', 'N/A')}")
                 st.write(f"**Estado Cliente:** {info_cliente.get('estado_cliente', 'N/A')}")
-                st.write(f"**Parentesco / Relación:** {info_cliente.get('parentesco', 'N/A')}")
+                st.write(f"**Parentesco:** {info_cliente.get('parentesco', 'N/A')}")
 
             st.markdown("---")
             
@@ -153,7 +179,6 @@ if df_creditos is not None:
 
             st.subheader("Historial de Pagos de este Cliente")
             if not pagos_cliente.empty:
-                # Limpiar columnas no deseadas del df de pagos
                 cols_validas = [c for c in pagos_cliente.columns if not str(c).startswith('Unnamed')]
                 st.dataframe(pagos_cliente[cols_validas], use_container_width=True)
             else:
@@ -220,4 +245,3 @@ if df_creditos is not None:
             * Medios: Transferencia (Nequi/Bancolombia) o Efectivo.
             * Cero sanciones financieras por mora.
             """)
-            
