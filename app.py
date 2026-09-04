@@ -525,15 +525,14 @@ if not df_creditos.empty:
                         )
 
                     with col_wa:
+                        # Extraer solo el primer nombre para hacerlo más personalizado
+                        primer_nombre = cliente_pago.split()[0]
                         msg_wa = (
-                            f"Hola *{cliente_pago}* 👋,\n\n"
-                            f"Confirmamos el registro de tu pago en *Entre Amigos Capital* 🤝:\n"
+                            f"Hola *{primer_nombre}* 😊 ¿Cómo estás?\n\n"
+                            f"Te escribo solo para confirmarte el registro de tu pago por *${valor_pago:,.0f} COP* en *Entre Amigos Capital* 🤝.\n\n"
                             f"🔹 *Recibo N°:* {proximo_pago_id}\n"
-                            f"🔹 *Monto Recibido:* ${valor_pago:,.0f} COP\n"
-                            f"🔹 *Abono a Intereses:* ${pago_interes:,.0f} COP\n"
-                            f"🔹 *Abono a Capital:* ${pago_capital:,.0f} COP\n"
                             f"🔹 *Saldo Restante:* ${nueva_deuda_total:,.0f} COP\n\n"
-                            f"¡Muchas gracias por mantener tu crédito al día! 🟢"
+                            f"¡Muchas gracias, {primer_nombre}! 🤗"
                         )
                         num_tel = "".join(filter(str.isdigit, str(telefono_cliente)))
                         if len(num_tel) == 10 and not num_tel.startswith("57"):
@@ -572,7 +571,7 @@ if not df_creditos.empty:
             df_mora_activa = df_mora_detalle[df_mora_detalle['estado'].astype(str).str.contains('mora', case=False, na=False)]
 
             if not df_mora_activa.empty:
-                st.error(f"🚨 **¡Atención! Se detectaron {len(df_mora_activa)} crédito(s) pendientes de pago en Mora.**")
+                st.markdown(f"### 📋 Créditos pendientes de pago ({len(df_mora_activa)})")
                 st.markdown("<br>", unsafe_allow_html=True)
 
                 for _, row in df_mora_activa.iterrows():
@@ -598,7 +597,15 @@ if not df_creditos.empty:
                                 num_tel = "".join(filter(str.isdigit, str(tel_cli)))
                                 if len(num_tel) == 10 and not num_tel.startswith("57"):
                                     num_tel = "57" + num_tel
-                                msg_cobro = f"Hola *{nombre_cli}* 👋, te saludamos de *Entre Amigos Capital*. Te recordamos que tienes un pago pendiente en mora por valor de *${val_pend:,.0f} COP*. Agradecemos tu pronta gestión. 🤝"
+                                
+                                # Tomar solo el primer nombre
+                                primer_nombre = nombre_cli.split()[0]
+                                msg_cobro = (
+                                    f"Hola *{primer_nombre}* 😊 ¿Cómo estás?\n\n"
+                                    f"Te escribo solo para recordarte el pago pendiente de *${val_pend:,.0f} COP*. Cuando puedas, te agradezco que lo tengas presente. 🙌\n\n"
+                                    f"Y cuando realices el pago, no olvides compartirnos el comprobante, porfa. 😊\n\n"
+                                    f"¡Muchas gracias, {primer_nombre}! 🤗"
+                                )
                                 msg_enc = urllib.parse.quote(msg_cobro)
                                 st.link_button("💬 Enviar Cobro WA", f"https://wa.me/{num_tel}?text={msg_enc}", use_container_width=True)
                             else:
