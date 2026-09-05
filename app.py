@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as pdx
+import plotly.express as px
 from datetime import datetime
 from groq import Groq
 
@@ -10,6 +10,33 @@ st.set_page_config(
     page_icon="💰",
     layout="wide"
 )
+
+# Estilo corporativo (Azul Marino / Verde Esmeralda)
+st.markdown("""
+    <style>
+    .stApp {
+        background-color: #0d1b2a;
+        color: #e0e1dd;
+    }
+    sidebar .stSidebar {
+        background-color: #1b263b;
+    }
+    .stTextInput input, .stTextArea textarea {
+        background-color: #1b263b;
+        color: #ffffff;
+        border: 1px solid #1b4332;
+    }
+    .stButton button {
+        background-color: #2d6a4f;
+        color: white;
+        border-radius: 5px;
+    }
+    .stButton button:hover {
+        background-color: #40916c;
+        color: white;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # Inicializar DataFrames en st.session_state si no existen
 if 'df_clientes' not in st.session_state:
@@ -136,7 +163,7 @@ elif opcion_menu == "🤖 Asistente IA":
                             {"role": "system", "content": prompt_sistema},
                             {"role": "user", "content": pregunta_usuario}
                         ],
-                        model="llama-3.1-8b-instant",  # Modelo estable y disponible universalmente en Groq
+                        model="llama-3.1-8b-instant",
                     )
 
                     respuesta_ia = chat_completion.choices[0].message.content
