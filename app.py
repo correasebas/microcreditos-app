@@ -7,7 +7,7 @@ import urllib.parse
 from fpdf import FPDF
 import os
 from dateutil.relativedelta import relativedelta
-from groq import Groq  # <-- Importación integrada para la API de Groq
+from groq import Groq
 
 # ---------------------------------------------------------
 # 0. CONFIGURACIÓN NATIVA DE STREAMLIT (config.toml)
@@ -38,19 +38,14 @@ st.set_page_config(
 # Estilos CSS avanzados para unificar el diseño corporativo
 st.markdown("""
     <style>
-    /* 1. Fondo general de la aplicación */
     .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"], [data-testid="stToolbar"], .main {
         background-color: #0A1118 !important;
         color: #E6EDF3 !important;
     }
-
-    /* 2. Tipografía general */
     html, body, [class*="css"], p, span, label, h1, h2, h3, h4, h5, h6 {
         color: #E6EDF3 !important;
         font-family: 'Inter', sans-serif !important;
     }
-
-    /* 3. Barra lateral (Sidebar) en Azul Marino Profundo */
     [data-testid="stSidebar"], [data-testid="stSidebarContent"] {
         background-color: #111B27 !important;
         border-right: 1px solid #1E2D3D !important;
@@ -58,8 +53,6 @@ st.markdown("""
     [data-testid="stSidebar"] * {
         color: #E6EDF3 !important;
     }
-
-    /* 4. Tarjetas de métricas ejecutivas */
     div[data-testid="stMetric"] {
         background-color: #111B27 !important;
         border: 1px solid #1E2D3D !important;
@@ -75,8 +68,6 @@ st.markdown("""
         color: #00D26A !important;
         font-weight: 700 !important;
     }
-
-    /* 5. Botones y enlaces principales (Verde Esmeralda Corporativo) */
     .stButton > button, .stLinkButton > a {
         background: linear-gradient(135deg, #00A859 0%, #00D26A 100%) !important;
         color: #0A1118 !important;
@@ -90,8 +81,6 @@ st.markdown("""
         opacity: 0.9 !important;
         box-shadow: 0 0 15px rgba(0, 210, 106, 0.4) !important;
     }
-
-    /* 6. Campos de entrada */
     .stSelectbox div[data-baseweb="select"] > div, 
     .stDateInput input, .stNumberInput input, .stTextInput input, div[data-baseweb="input"] {
         background-color: #111B27 !important;
@@ -99,21 +88,16 @@ st.markdown("""
         border-color: #1E2D3D !important;
         border-radius: 8px !important;
     }
-
-    /* 7. Tablas de datos */
     [data-testid="stDataFrame"], .dataframe {
         background-color: #111B27 !important;
         border: 1px solid #1E2D3D !important;
         border-radius: 8px !important;
     }
-
-    /* 8. Contenedores y expanders */
     div[data-testid="stExpander"] {
         background-color: #111B27 !important;
         border: 1px solid #1E2D3D !important;
         border-radius: 8px !important;
     }
-
     hr {
         border-color: #1E2D3D !important;
     }
@@ -272,7 +256,6 @@ if 'current_loaded_file' not in st.session_state or st.session_state['current_lo
     st.session_state['df_calendario'] = df_cal if df_cal is not None else pd.DataFrame()
     st.session_state['current_loaded_file'] = file_to_load
 
-# Inicializar DataFrames en session_state si no existen
 if 'df_clientes' not in st.session_state:
     st.session_state['df_clientes'] = pd.DataFrame()
 if 'df_creditos' not in st.session_state:
@@ -883,7 +866,7 @@ if not df_creditos.empty or not df_clientes.empty:
                                 st.caption("📞 Teléfono no disponible")
                         st.markdown("---")
             else:
-                st.success("🟢 **¡Excelente noticia!** No hay créditos in mora registrados actualmente en el sistema.")
+                st.success("🟢 **¡Excelente noticia!** No hay créditos en mora registrados actualmente en el sistema.")
         else:
             st.info("ℹ️ No se encontró la hoja `Estado_Cartera` o la columna `estado` en el archivo cargado.")
 
@@ -924,7 +907,7 @@ if not df_creditos.empty or not df_clientes.empty:
                 st.metric("Total General a Cancelar", f"${total_pagar:,.0f} COP")
 
     # =========================================================
-    # 7. ASISTENTE IA (GROQ) - ACTUALIZADO
+    # 7. ASISTENTE IA (GROQ) - ACTUALIZADO CON MODELOS VIGENTES
     # =========================================================
     elif opcion_menu == "🤖 Asistente IA (Groq)":
         st.title("🤖 Asistente Inteligente con Groq AI")
@@ -938,10 +921,9 @@ if not df_creditos.empty or not df_clientes.empty:
             model_choice = st.selectbox(
                 "Modelo de Groq",
                 [
-                    "llama-3.3-70b-versatile",
+                    "openai/gpt-oss-120b",
                     "llama-3.1-8b-instant",
-                    "mixtral-8x7b-32768",
-                    "gemma2-9b-it"
+                    "qwen/qwen3.6-27b"
                 ],
                 index=0
             )
