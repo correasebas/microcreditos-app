@@ -883,7 +883,7 @@ if not df_creditos.empty or not df_clientes.empty:
                                 st.caption("📞 Teléfono no disponible")
                         st.markdown("---")
             else:
-                st.success("🟢 **¡Excelente noticia!** No hay créditos en mora registrados actualmente en el sistema.")
+                st.success("🟢 **¡Excelente noticia!** No hay créditos in mora registrados actualmente en el sistema.")
         else:
             st.info("ℹ️ No se encontró la hoja `Estado_Cartera` o la columna `estado` en el archivo cargado.")
 
@@ -924,7 +924,7 @@ if not df_creditos.empty or not df_clientes.empty:
                 st.metric("Total General a Cancelar", f"${total_pagar:,.0f} COP")
 
     # =========================================================
-    # 7. ASISTENTE IA (GROQ)
+    # 7. ASISTENTE IA (GROQ) - ACTUALIZADO
     # =========================================================
     elif opcion_menu == "🤖 Asistente IA (Groq)":
         st.title("🤖 Asistente Inteligente con Groq AI")
@@ -937,7 +937,12 @@ if not df_creditos.empty or not df_clientes.empty:
             st.subheader("⚙️ Configuración")
             model_choice = st.selectbox(
                 "Modelo de Groq",
-                ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
+                [
+                    "llama-3.1-70b-versatile",
+                    "llama-3.1-8b-instant",
+                    "mixtral-8x7b-32768",
+                    "gemma2-9b-it"
+                ],
                 index=0
             )
             temperature = st.slider("Temperatura", min_value=0.0, max_value=1.0, value=0.7, step=0.1)
