@@ -502,7 +502,7 @@ if not df_creditos.empty:
 
                 fecha_pago = st.date_input("Fecha del Pago:", datetime.today())
                 medio_pago = st.selectbox("Medio de Pago:", ["Transferencia", "Efectivo"])
-                valor_pago = st.number_input("Valor Pagado (COP):", min_value=1000, value=90000, step=5000, format="%d")
+                valor_pago = st.number_input("Valor Pagado (COP):", min_value=1000, value=1500000, step=5000, format="%d")
                 concepto = st.selectbox("Concepto del Pago:", ["Intereses", "Abono a Capital", "Intereses y capital"])
 
         with col_f2:
@@ -641,9 +641,11 @@ if not df_creditos.empty:
 
                     with col_wa:
                         nombre_w = cliente_pago
+                        # Plantilla de confirmación de pago
                         msg_wa = (
-                            f"Hola *{nombre_w}* 😊 ¿Cómo estás?\n\n"
-                            f"Te escribo para confirmarte el registro de tu pago por *${valor_pago:,.0f} COP* en Entre Amigos Capital. ¡Muchas gracias! 🙌"
+                            f"Hola {nombre_w} 😊 ¿Cómo estás?\n\n"
+                            f"Te escribo para contarte que ya recibimos tu pago de ${valor_pago:,.0f}. 🙌\n\n"
+                            f"¡Muchas gracias por ponerte al día y por cumplir con tu pago! 😊"
                         )
                         num_tel = "".join(filter(str.isdigit, str(telefono_cliente)))
                         if len(num_tel) == 10 and not num_tel.startswith("57"):
@@ -708,9 +710,11 @@ if not df_creditos.empty:
                                     num_tel = "57" + num_tel
                                 
                                 nombre_w = nombre_cli
+                                # Nueva plantilla exacta solicitada para la gestión de cobro
                                 msg_cobro = (
-                                    f"Hola *{nombre_w}* 😊 ¿Cómo estás?\n\n"
-                                    f"Te escribo desde Entre Amigos Capital para recordarte el saldo pendiente por valor de *${val_pend:,.0f} COP*. Agradecemos tu apoyo para mantener el fondo al día. 🙌"
+                                    f"Hola {nombre_w} 😊 ¿Cómo estás?\n\n"
+                                    f"{nombre_w}, te quería recordar que tienes pendiente un pago de ${val_pend:,.0f}. Cuando puedas, nos ayudas con este pendiente para dejar todo al día 🙌\n\n"
+                                    f"Cuando lo hagas, nos compartes por aquí el comprobante. ¡Muchas gracias! 😊"
                                 )
                                 msg_enc = urllib.parse.quote(msg_cobro)
                                 st.link_button("💬 Enviar Cobro WA", f"https://wa.me/{num_tel}?text={msg_enc}", use_container_width=True)
