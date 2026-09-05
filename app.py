@@ -391,6 +391,72 @@ if not df_creditos.empty or not df_clientes.empty:
 
         st.markdown("---")
 
+        # =========================================================
+        # NUEVO: GRÁFICO DE PROYECCIÓN DE INGRESOS (FLUJO DE CAJA)
+        # =========================================================
+        st.subheader("📈 Proyección de Flujo de Caja Esperado (Año 2026)")
+        st.markdown("Ingresos programados mes a mes por concepto de **Capital** e **Intereses** según el calendario de pagos.")
+
+        df_cal_actual = st.session_state.get('df_calendario', pd.DataFrame())
+        if not df_cal_actual.empty and 'fecha_programada' in df_cal_actual.columns:
+            df_cal_cp = df_cal_actual.copy()
+            df_cal_cp['fecha_programada'] = pd.to_datetime(df_cal_cp['fecha_programada'], errors='coerce')
+            
+            # Filtrar solo el año en curso (2026)
+            df_cal_2026 = df_cal_cp[df_cal_cp['fecha_programada'].dt.year == 2026].dropna(subset=['fecha_programada']).copy()
+
+            if not df_cal_2026.empty:
+                df_cal_2026['Mes_Num'] = df_cal_2026['fecha_programada'].dt.month
+                df_cal_2026['Mes_Nombre'] = df_cal_2026['fecha_programada'].dt.strftime('%B')
+
+                # Mapeo de nombres de meses en español para la gráfica
+                meses_es = {
+                    1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 
+                    5: 'Mayo', 6: 'Junio', 7: 'Julio', 8: 'Agosto', 
+                    9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'
+                }
+                df_cal_2026['Mes_Texto'] = df_cal_2026['Mes_Num'].map(meses_es)
+
+                # Agrupar por mes
+                df_proyeccion = df_cal_2026.groupby(['Mes_Num', 'Mes_Texto'])[['capital_programado', 'interes_programado']].sum().reset_index()
+                df_proyeccion = df_proyeccion.sort_values('Mes_Num')
+
+                # Reestructurar para gráfico de barras apiladas
+                df_melted = df_proyeccion.melt(
+                    id_vars=['Mes_Texto', 'Mes_Num'], 
+                    value_vars=['capital_programado', 'interes_programado'],
+                    var_name='Concepto', 
+                    value_name='Valor'
+                )
+                df_melted['Concepto'] = df_melted['Concepto'].replace({
+                    'capital_programado': 'Abono a Capital', 
+                    'interes_programado': 'Intereses'
+                })
+
+                fig_proy = px.bar(
+                    df_melted, 
+                    x='Mes_Texto', 
+                    y='Valor', 
+                    color='Concepto',
+                    barmode='stack',
+                    color_discrete_map={'Intereses': '#00D26A', 'Abono a Capital': '#3498DB'},
+                    labels={'Mes_Texto': 'Mes', 'Valor': 'Valor Esperado (COP)', 'Concepto': 'Concepto'}
+                )
+                fig_proy.update_layout(
+                    paper_bgcolor="rgba(0,0,0,0)", 
+                    plot_bgcolor="rgba(0,0,0,0)", 
+                    font_color="#E6EDF3",
+                    xaxis=dict(categoryorder='array', categoryarray=list(meses_es.values())),
+                    legend=dict(font=dict(color="#E6EDF3"))
+                )
+                st.plotly_chart(fig_proy, use_container_width=True)
+            else:
+                st.info("ℹ️ No hay cuotas programadas registradas para el año 2026.")
+        else:
+            st.info("ℹ️ El calendario de intereses no está disponible para generar la proyección.")
+
+        st.markdown("---")
+
         col_left, col_right = st.columns([1, 1])
 
         with col_left:
@@ -914,11 +980,11 @@ if not df_creditos.empty or not df_clientes.empty:
                 st.write(f"• **Total de intereses:** ${total_intereses:,.0f} COP")
                 st.metric("Total General a Cancelar", f"${total_pagar:,.0f} COP")
             else:
-                cuota_mensual = (monto_sim * tasa_mensual) / (1 - (1 + tasa_mensual)**(-plazo_sim))
-                total_pagar = cuota_mensual * plazo_sim
+                cuota_fija = (monto_sim * tasa_mensual) / (1 - (1 + tasa_mensual)**(-plazo_sim))
+                total_pagar = cuota_fija * plazo_sim
                 total_intereses = total_pagar - monto_sim
 
-                st.write(f"• **Cuota fija mensual:** ${cuota_mensual:,.0f} COP")
+                st.write(f"• **Cuota fija mensual:** ${cuota_fija:,.0f} COP")
                 st.write(f"• **Total intereses:** ${total_intereses:,.0f} COP")
                 st.metric("Total General a Cancelar", f"${total_pagar:,.0f} COP")
 
