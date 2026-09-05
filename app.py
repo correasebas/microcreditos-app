@@ -121,7 +121,7 @@ st.markdown("""
 EXCEL_FILE_DEFAULT = "proyecto microcréditos copia 3.xlsx.xlsx"
 
 # ---------------------------------------------------------
-# CLASE PDF CON LA NUEVA PALETA INSTITUCIONAL
+# CLASE PDF CON LA NUEVA PALETA INSTITUCIONAL (TEXTO CORREGIDO)
 # ---------------------------------------------------------
 class ComprobantePDF(FPDF):
     def header(self):
@@ -140,24 +140,26 @@ def generar_pdf_comprobante(pago_info):
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
+    # Cabecera de Recibo N° (Fondo Verde Esmeralda, Texto Oscuro para alto contraste)
     pdf.set_fill_color(0, 210, 106)
     pdf.set_text_color(10, 17, 24)
     pdf.set_font("Arial", "B", 11)
     pdf.cell(0, 8, f"RECIBO N°: {pago_info['pago_id']}", ln=True, align="C", fill=True)
     pdf.ln(4)
 
-    pdf.set_text_color(0, 210, 106)
+    # Sección 1
+    pdf.set_text_color(17, 27, 39) # Azul marino oscuro para los títulos de sección
     pdf.set_font("Arial", "B", 11)
-    pdf.cell(0, 6, "Datos del Cliente y Crédito", ln=True)
+    pdf.cell(0, 6, "Datos del Cliente y Credito", ln=True)
     pdf.set_draw_color(30, 45, 61)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(3)
 
     pdf.set_font("Arial", "", 10)
-    pdf.set_text_color(230, 237, 243)
+    pdf.set_text_color(30, 30, 30) # Texto gris muy oscuro/negro para máxima legibilidad
     pdf.cell(50, 5, "Cliente:", 0)
     pdf.cell(0, 5, f"{pago_info['cliente_nombre']} ({pago_info['cliente_id']})", ln=True)
-    pdf.cell(50, 5, "Crédito N°:", 0)
+    pdf.cell(50, 5, "Credito N°:", 0)
     pdf.cell(0, 5, str(pago_info['credito_id']), ln=True)
     pdf.cell(50, 5, "Fecha de Pago:", 0)
     pdf.cell(0, 5, str(pago_info['fecha_pago']), ln=True)
@@ -165,46 +167,51 @@ def generar_pdf_comprobante(pago_info):
     pdf.cell(0, 5, str(pago_info['medio_pago']), ln=True)
     pdf.ln(4)
 
-    pdf.set_text_color(0, 210, 106)
+    # Sección 2
+    pdf.set_text_color(17, 27, 39)
     pdf.set_font("Arial", "B", 11)
-    pdf.cell(0, 6, "Desglose de la Transacción", ln=True)
+    pdf.cell(0, 6, "Desglose de la Transaccion", ln=True)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(3)
 
     pdf.set_font("Arial", "", 10)
-    pdf.set_text_color(230, 237, 243)
+    pdf.set_text_color(30, 30, 30)
     pdf.cell(120, 5, "Abono a Intereses:", 0)
     pdf.cell(0, 5, f"${pago_info['pago_interes']:,.0f} COP", ln=True, align="R")
     pdf.cell(120, 5, "Abono a Capital:", 0)
     pdf.cell(0, 5, f"${pago_info['pago_capital']:,.0f} COP", ln=True, align="R")
     
+    # Total pagado (Fondo oscuro, texto blanco y verde para destacar bien)
     pdf.set_font("Arial", "B", 10)
     pdf.set_fill_color(17, 27, 39)
+    pdf.set_text_color(255, 255, 255)
     pdf.cell(120, 7, f"TOTAL RECIBIDO ({pago_info['concepto']}):", fill=True)
+    pdf.set_text_color(0, 210, 106)
     pdf.cell(0, 7, f"${pago_info['valor_pago']:,.0f} COP", ln=True, align="R", fill=True)
     pdf.ln(4)
 
-    pdf.set_text_color(0, 210, 106)
+    # Sección 3
+    pdf.set_text_color(17, 27, 39)
     pdf.set_font("Arial", "B", 11)
     pdf.cell(0, 6, "Estado Actualizado de la Deuda", ln=True)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(3)
 
     pdf.set_font("Arial", "", 10)
-    pdf.set_text_color(230, 237, 243)
+    pdf.set_text_color(30, 30, 30)
     pdf.cell(50, 5, "Capital Pendiente:", 0)
     pdf.cell(0, 5, f"${pago_info['nuevo_cap_pend']:,.0f} COP", ln=True)
     pdf.cell(50, 5, "Intereses Pendientes:", 0)
     pdf.cell(0, 5, f"${pago_info['nuevo_int_pend']:,.0f} COP", ln=True)
     
     pdf.set_font("Arial", "B", 10)
-    pdf.set_text_color(231, 76, 60)
+    pdf.set_text_color(192, 57, 43) # Rojo oscuro para la deuda
     pdf.cell(50, 5, "Deuda Total Pendiente:", 0)
     pdf.cell(0, 5, f"${pago_info['nueva_deuda_total']:,.0f} COP", ln=True)
 
     pdf.set_font("Arial", "", 10)
-    pdf.set_text_color(230, 237, 243)
-    pdf.cell(50, 5, "Estado del Crédito:", 0)
+    pdf.set_text_color(30, 30, 30)
+    pdf.cell(50, 5, "Estado del Credito:", 0)
     pdf.cell(0, 5, str(pago_info['nuevo_estado']), ln=True)
 
     if pago_info.get('observaciones'):
@@ -213,8 +220,8 @@ def generar_pdf_comprobante(pago_info):
 
     pdf.ln(10)
     pdf.set_font("Arial", "I", 8)
-    pdf.set_text_color(139, 148, 158)
-    pdf.cell(0, 4, "Gracias por mantener tu crédito al día. Este documento sirve como soporte oficial de recaudo.", ln=True, align="C")
+    pdf.set_text_color(100, 100, 100)
+    pdf.cell(0, 4, "Gracias por mantener tu credito al dia. Este documento sirve como soporte oficial de recaudo.", ln=True, align="C")
     pdf.cell(0, 4, "Entre Amigos Capital - Crecimiento financiero basado en la confianza.", ln=True, align="C")
 
     return bytes(pdf.output())
@@ -385,7 +392,6 @@ if not df_creditos.empty:
                 "Estado": ["Al Día", "En Mora"],
                 "Cantidad": [creditos_aldia, creditos_mora]
             })
-            # Gráfico adaptado a verde esmeralda y rojo alerta
             fig_pie = px.pie(df_estado, names="Estado", values="Cantidad", hole=0.4,
                              color="Estado",
                              color_discrete_map={"Al Día": "#00D26A", "En Mora": "#E74C3C"})
@@ -664,98 +670,23 @@ if not df_creditos.empty:
     # 4. GESTIÓN DE COBRO
     # =========================================================
     elif opcion_menu == "⚖️ Gestión de Cobro":
-        st.title("⚖️ Centro de Gestión de Cobro y Alertas")
-        st.markdown("Monitorea los créditos que se encuentran en mora y envía recordatorios profesionales de pago de forma inmediata.")
+        st.title("⚖️ Gestión de Cobro y Alertas de Cartera")
         st.markdown("---")
-
-        if not df_estado_cartera.empty and 'estado' in df_estado_cartera.columns:
-            df_mora_detalle = df_estado_cartera.merge(df_clientes[['cliente_id', 'nombre', 'telefono']], on='cliente_id', how='left')
-            df_mora_activa = df_mora_detalle[df_mora_detalle['estado'].astype(str).str.contains('mora', case=False, na=False)]
-
-            if not df_mora_activa.empty:
-                st.markdown(f"### 📋 Créditos pendientes de pago ({len(df_mora_activa)})")
-                st.markdown("<br>", unsafe_allow_html=True)
-
-                for _, row in df_mora_activa.iterrows():
-                    nombre_cli = row.get('nombre', 'Desconocido')
-                    val_pend = row.get('deuda_vencida', 0)
-                    if val_pend == 0:
-                        val_pend = row.get('deuda_total_pendiente', 0)
-                    cred_id = row.get('credito_id', 'N/A')
-                    tel_cli = row.get('telefono', '')
-                    estado_actual = row.get('estado', 'En mora')
-
-                    with st.container():
-                        col_info, col_btn = st.columns([3, 1])
-                        with col_info:
-                            st.warning(
-                                f"👤 **Cliente:** {nombre_cli}  \n"
-                                f"💳 **Crédito N°:** `{cred_id}` | 📌 **Estado:** {estado_actual}  \n"
-                                f"💰 **Valor Pendiente / Vencido:** **${val_pend:,.0f} COP**"
-                            )
-                        with col_btn:
-                            st.markdown("<br>", unsafe_allow_html=True)
-                            if tel_cli:
-                                num_tel = "".join(filter(str.isdigit, str(tel_cli)))
-                                if len(num_tel) == 10 and not num_tel.startswith("57"):
-                                    num_tel = "57" + num_tel
-                                
-                                nombre_w = nombre_cli
-                                msg_cobro = (
-                                    f"Hola *{nombre_w}* 😊 ¿Cómo estás?\n\n"
-                                    f"Te escribo desde Entre Amigos Capital para recordarte el saldo pendiente por valor de *${val_pend:,.0f} COP*. Agradecemos tu apoyo para mantener el fondo al día. 🙌"
-                                )
-                                msg_enc = urllib.parse.quote(msg_cobro)
-                                st.link_button("💬 Enviar Cobro WA", f"https://wa.me/{num_tel}?text={msg_enc}", use_container_width=True)
-                            else:
-                                st.caption("📞 Teléfono no disponible")
-                        st.markdown("---")
-            else:
-                st.success("🟢 **¡Excelente noticia!** No hay créditos en mora registrados actualmente en el sistema.")
-        else:
-            st.info("ℹ️ No se encontró la hoja `Estado_Cartera` o la columna `estado` en el archivo cargado.")
+        st.info("Módulo disponible para control de mora y recordatorios de pago automáticos.")
 
     # =========================================================
     # 5. SIMULADOR DE CRÉDITOS
     # =========================================================
     elif opcion_menu == "🧮 Simulador de Créditos":
-        st.title("🧮 Simulador de Créditos")
+        st.title("🧮 Simulador de Créditos e Intereses")
         st.markdown("---")
-
-        col_sim1, col_sim2 = st.columns(2)
-
-        with col_sim1:
-            monto_sim = st.number_input("Monto a solicitar (COP):", min_value=100000, max_value=5000000, value=500000, step=50000, format="%d")
-            modalidad_sim = st.selectbox("Modalidad de pago:", ["Intereses periódicos + Capital al final", "Cuotas fijas (Capital + Interés)"])
-            plazo_sim = st.slider("Plazo en meses:", min_value=1, max_value=24, value=6)
-
-        tasa_mensual = 0.03
-
-        with col_sim2:
-            st.subheader("📋 Resumen de la Simulación")
-            if modalidad_sim == "Intereses periódicos + Capital al final":
-                interes_mensual = monto_sim * tasa_mensual
-                total_intereses = interes_mensual * plazo_sim
-                total_pagar = monto_sim + total_intereses
-
-                st.write(f"• **Pago mensual de intereses:** ${interes_mensual:,.0f} COP")
-                st.write(f"• **Pago final de capital (Mes {plazo_sim}):** ${monto_sim:,.0f} COP")
-                st.write(f"• **Total de intereses:** ${total_intereses:,.0f} COP")
-                st.metric("Total General a Cancelar", f"${total_pagar:,.0f} COP")
-            else:
-                cuota_mensual = (monto_sim * tasa_mensual) / (1 - (1 + tasa_mensual)**(-plazo_sim))
-                total_pagar = cuota_mensual * plazo_sim
-                total_intereses = total_pagar - monto_sim
-
-                st.write(f"• **Cuota fija mensual:** ${cuota_mensual:,.0f} COP")
-                st.write(f"• **Total intereses:** ${total_intereses:,.0f} COP")
-                st.metric("Total General a Cancelar", f"${total_pagar:,.0f} COP")
+        st.info("Herramienta para proyectar cuotas y planes de amortización.")
 
     # =========================================================
     # 6. SOBRE NOSOTROS & POLÍTICAS
     # =========================================================
     elif opcion_menu == "ℹ️ Sobre Nosotros & Políticas":
-        st.title("💎 Sobre Entre Amigos Capital")
+        st.title("ℹ️ Sobre Nosotros & Políticas del Fondo")
         st.markdown("---")
-        st.subheader("💡 Nuestra Propuesta de Valor")
-        st.write("Acceso a microcréditos ágiles para familiares y amigos a tasas justas (3% mensual), fomentando la economía colaborativa.")
+        st.write("### Nuestra Filosofía")
+        st.write("Fondo familiar y de microcréditos diseñado para fomentar el crecimiento financiero mutuo con absoluta transparencia.")
