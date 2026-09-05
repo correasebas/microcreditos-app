@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as pdx # O plotly.express
+import plotly.express as pdx
 from datetime import datetime
 from groq import Groq
 
@@ -13,7 +13,6 @@ st.set_page_config(
 
 # Inicializar DataFrames en st.session_state si no existen
 if 'df_clientes' not in st.session_state:
-    # Datos de ejemplo iniciales o vacíos según tu proyecto
     st.session_state['df_clientes'] = pd.DataFrame(columns=["ID", "Nombre", "Teléfono", "Crédito Activo", "Monto"])
 
 if 'df_estado_cartera' not in st.session_state:
@@ -42,7 +41,6 @@ if opcion_menu == "📊 Dashboard General":
     st.markdown("Resumen general del estado financiero del fondo familiar.")
     st.markdown("---")
     st.metric("Total Clientes Registrados", len(st.session_state['df_clientes']))
-    # Aquí puedes agregar tus métricas y gráficos habituales con Plotly o Pandas
 
 
 # =========================================================
@@ -138,7 +136,7 @@ elif opcion_menu == "🤖 Asistente IA":
                             {"role": "system", "content": prompt_sistema},
                             {"role": "user", "content": pregunta_usuario}
                         ],
-                        model="llama3-70b-8192",
+                        model="llama-3.3-70b-versatile",  # Modelo actualizado y activo
                     )
 
                     respuesta_ia = chat_completion.choices[0].message.content
