@@ -641,10 +641,10 @@ if not df_creditos.empty:
 
                     with col_wa:
                         nombre_w = cliente_pago
-                        # Plantilla de confirmación de pago
+                        # Plantilla exacta de confirmación de pago en singular y sin nombre del proyecto
                         msg_wa = (
                             f"Hola {nombre_w} 😊 ¿Cómo estás?\n\n"
-                            f"Te escribo para contarte que ya recibimos tu pago de ${valor_pago:,.0f}. 🙌\n\n"
+                            f"Te escribo para contarte que ya recibí tu pago de ${valor_pago:,.0f}. 🙌\n\n"
                             f"¡Muchas gracias por ponerte al día y por cumplir con tu pago! 😊"
                         )
                         num_tel = "".join(filter(str.isdigit, str(telefono_cliente)))
@@ -710,11 +710,11 @@ if not df_creditos.empty:
                                     num_tel = "57" + num_tel
                                 
                                 nombre_w = nombre_cli
-                                # Nueva plantilla exacta solicitada para la gestión de cobro
+                                # Plantilla exacta de cobro en singular y sin nombre del proyecto
                                 msg_cobro = (
                                     f"Hola {nombre_w} 😊 ¿Cómo estás?\n\n"
-                                    f"{nombre_w}, te quería recordar que tienes pendiente un pago de ${val_pend:,.0f}. Cuando puedas, nos ayudas con este pendiente para dejar todo al día 🙌\n\n"
-                                    f"Cuando lo hagas, nos compartes por aquí el comprobante. ¡Muchas gracias! 😊"
+                                    f"{nombre_w}, te quería recordar que tienes pendiente un pago de ${val_pend:,.0f}. Cuando puedas, me ayudas con este pendiente para dejar todo al día 🙌\n\n"
+                                    f"Cuando lo hagas, me compartes por aquí el comprobante. ¡Muchas gracias! 😊"
                                 )
                                 msg_enc = urllib.parse.quote(msg_cobro)
                                 st.link_button("💬 Enviar Cobro WA", f"https://wa.me/{num_tel}?text={msg_enc}", use_container_width=True)
