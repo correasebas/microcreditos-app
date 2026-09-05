@@ -154,4 +154,3 @@ elif opcion_menu == "ℹ️ Sobre Nosotros & Políticas":
     st.title("ℹ️ Sobre el Fondo & Políticas")
     st.markdown("Información corporativa, misión y normativas de Entre Amigos Capital.")
     st.markdown("---")
-    
