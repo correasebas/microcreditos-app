@@ -136,7 +136,7 @@ elif opcion_menu == "🤖 Asistente IA":
                             {"role": "system", "content": prompt_sistema},
                             {"role": "user", "content": pregunta_usuario}
                         ],
-                        model="llama-3.3-70b-versatile",  # Modelo actualizado y activo
+                        model="llama-3.1-8b-instant",  # Modelo estable y disponible universalmente en Groq
                     )
 
                     respuesta_ia = chat_completion.choices[0].message.content
@@ -154,3 +154,4 @@ elif opcion_menu == "ℹ️ Sobre Nosotros & Políticas":
     st.title("ℹ️ Sobre el Fondo & Políticas")
     st.markdown("Información corporativa, misión y normativas de Entre Amigos Capital.")
     st.markdown("---")
+    
