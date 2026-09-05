@@ -21,7 +21,7 @@ st.markdown("""
     sidebar .stSidebar {
         background-color: #1b263b;
     }
-    .stTextInput input, .stTextArea textarea {
+    .stTextInput input, .stTextArea textarea, .stNumberInput input {
         background-color: #1b263b;
         color: #ffffff;
         border: 1px solid #1b4332;
@@ -67,7 +67,19 @@ if opcion_menu == "📊 Dashboard General":
     st.title("📊 Dashboard General - Entre Amigos Capital")
     st.markdown("Resumen general del estado financiero del fondo familiar.")
     st.markdown("---")
-    st.metric("Total Clientes Registrados", len(st.session_state['df_clientes']))
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Total Clientes Registrados", len(st.session_state['df_clientes']))
+    with col2:
+        total_monto = st.session_state['df_clientes']['Monto'].sum() if not st.session_state['df_clientes'].empty else 0
+        st.metric("Capital Total Prestado", f"${total_monto:,.2f}")
+
+    st.markdown("### 📋 Listado Actual de Clientes")
+    if not st.session_state['df_clientes'].empty:
+        st.dataframe(st.session_state['df_clientes'], use_container_width=True)
+    else:
+        st.info("No hay clientes registrados todavía. Ve a la sección 'Nuevos Registros' para agregar el primero.")
 
 
 # =========================================================
@@ -77,16 +89,45 @@ elif opcion_menu == "👤 Ficha por Cliente":
     st.title("👤 Ficha Detallada por Cliente")
     st.markdown("Consulta el historial y estado actual de cada integrante o prestatario.")
     st.markdown("---")
-    st.write("Selecciona o busca un cliente para ver sus detalles.")
+    if not st.session_state['df_clientes'].empty:
+        cliente_seleccionado = st.selectbox("Selecciona un cliente:", st.session_state['df_clientes']['Nombre'].unique())
+        datos_cliente = st.session_state['df_clientes'][st.session_state['df_clientes']['Nombre'] == cliente_seleccionado]
+        st.dataframe(datos_cliente, use_container_width=True)
+    else:
+        st.info("Primero debes registrar clientes en la sección 'Nuevos Registros'.")
 
 
 # =========================================================
 # 3. NUEVOS REGISTROS
 # =========================================================
 elif opcion_menu == "➕ Nuevos Registros":
-    st.title("➕ Nuevos Registros")
-    st.markdown("Registra nuevos clientes o créditos otorgados.")
+    st.title("➕ Nuevos Registros de Clientes y Créditos")
+    st.markdown("Ingresa la información para dar de alta un nuevo crédito en el fondo.")
     st.markdown("---")
+
+    with st.form("form_nuevo_cliente"):
+        nombre = st.text_input("Nombre Completo del Cliente")
+        telefono = st.text_input("Teléfono de Contacto")
+        id_credito = st.text_input("ID o Código del Crédito (ej. CR-001)")
+        monto = st.number_input("Monto del Crédito", min_value=0.0, step=1000.0)
+        
+        submitted = st.form_submit_button("Guardar Registro")
+        
+        if submitted:
+            if nombre and id_credito and monto > 0:
+                # Agregar a clientes
+                nuevo_cliente = pd.DataFrame([[id_credito, nombre, telefono, "Activo", monto]], 
+                                             columns=["ID", "Nombre", "Teléfono", "Crédito Activo", "Monto"])
+                st.session_state['df_clientes'] = pd.concat([st.session_state['df_clientes'], nuevo_cliente], ignore_index=True)
+                
+                # Agregar a estado de cartera
+                nueva_cartera = pd.DataFrame([[id_credito, nombre, monto, "Al Día"]], 
+                                             columns=["ID Crédito", "Cliente", "Saldo Pendiente", "Estado"])
+                st.session_state['df_estado_cartera'] = pd.concat([st.session_state['df_estado_cartera'], nueva_cartera], ignore_index=True)
+                
+                st.success(f"¡Cliente {nombre} y crédito {id_credito} guardados con éxito!")
+            else:
+                st.error("Por favor completa los campos obligatorios y asegúrate de que el monto sea mayor a 0.")
 
 
 # =========================================================
@@ -96,6 +137,7 @@ elif opcion_menu == "📝 Registrar Pago":
     st.title("📝 Registro de Abonos y Pagos")
     st.markdown("Actualiza las cuotas o saldos pendientes.")
     st.markdown("---")
+    st.write("Módulo en preparación. Pronto podrás registrar abonos aquí.")
 
 
 # =========================================================
@@ -105,6 +147,10 @@ elif opcion_menu == "⚖️ Gestión de Cobro":
     st.title("⚖️ Gestión de Cartera y Cobros")
     st.markdown("Visualiza alertas y cuotas próximas a vencer o atrasadas.")
     st.markdown("---")
+    if not st.session_state['df_estado_cartera'].empty:
+        st.dataframe(st.session_state['df_estado_cartera'], use_container_width=True)
+    else:
+        st.info("No hay registros de cartera activos.")
 
 
 # =========================================================
@@ -124,7 +170,6 @@ elif opcion_menu == "🤖 Asistente IA":
     st.markdown("Hazle preguntas en lenguaje natural sobre tus clientes, créditos, pagos o estado de cartera.")
     st.markdown("---")
 
-    # Campo para ingresar la clave de Groq manualmente en la pantalla
     groq_api_key = st.text_input("Ingresa tu Clave de API de Groq:", type="password", help="Pega aquí tu clave de Groq (gsk_...)")
 
     pregunta_usuario = st.text_area(
