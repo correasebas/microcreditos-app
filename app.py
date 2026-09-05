@@ -7,7 +7,7 @@ import urllib.parse
 from fpdf import FPDF
 import os
 from dateutil.relativedelta import relativedelta
-from groq import Groq
+from groq import Groq  # <-- Importación integrada para la API de Groq
 
 # ---------------------------------------------------------
 # 0. CONFIGURACIÓN NATIVA DE STREAMLIT (config.toml)
@@ -224,7 +224,7 @@ def generar_pdf_comprobante(pago_info):
     return bytes(pdf.output())
 
 # ---------------------------------------------------------
-# MENÚ LATERAL & CONFIGURACIÓN DE GROQ IA
+# MENÚ LATERAL & BRANDING Y MISIÓN DEL FONDO
 # ---------------------------------------------------------
 st.sidebar.title("💎 Entre Amigos Capital")
 st.sidebar.caption("Fondo de Inversión y Microcréditos Familiares")
@@ -235,10 +235,6 @@ with st.sidebar.expander("📌 Nuestra Misión", expanded=False):
         "dentro de nuestro círculo de confianza, ofreciendo liquidez ágil, "
         "tasas justas y transparencia absoluta en cada operación."
     )
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("🤖 Integración de IA (Groq)")
-groq_api_key_input = st.sidebar.text_input("🔑 Clave de API de Groq:", type="password", help="Ingresa tu llave de Groq para habilitar el asistente inteligente.")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("📂 Base de Datos Excel")
@@ -928,62 +924,64 @@ if not df_creditos.empty or not df_clientes.empty:
                 st.metric("Total General a Cancelar", f"${total_pagar:,.0f} COP")
 
     # =========================================================
-    # 7. ASISTENTE INTELIGENTE IA (GROQ)
+    # 7. ASISTENTE IA (GROQ)
     # =========================================================
     elif opcion_menu == "🤖 Asistente IA (Groq)":
-        st.title("🤖 Asistente Financiero con Inteligencia Artificial (Groq)")
-        st.markdown("Consulta y analiza el estado de cartera, evalúa riesgos de crédito o pide recomendaciones estratégicas para tu fondo familiar usando Groq.")
+        st.title("🤖 Asistente Inteligente con Groq AI")
+        st.markdown("Genera respuestas corporativas, redacta mensajes o analiza escenarios financieros utilizando alta velocidad mediante la API de Groq.")
         st.markdown("---")
 
-        if not groq_api_key_input:
-            st.warning("⚠️ Por favor, ingresa tu **Clave de API de Groq** en la barra lateral para activar el asistente.")
-        else:
-            client_groq = Groq(api_key=groq_api_key_input)
+        col_ia1, col_ia2 = st.columns([1, 2])
 
-            # Preparar contexto automático basado en el estado actual de los datos
-            df_res_ia = recalcular_resumen_cartera()
-            resumen_texto = df_res_ia.to_string() if not df_res_ia.empty else "No hay datos de resumen disponibles."
+        with col_ia1:
+            st.subheader("⚙️ Configuración")
+            model_choice = st.selectbox(
+                "Modelo de Groq",
+                ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
+                index=0
+            )
+            temperature = st.slider("Temperatura", min_value=0.0, max_value=1.0, value=0.7, step=0.1)
             
-            system_prompt = (
-                "Eres un asesor financiero experto y analista de riesgos para un fondo de inversión y microcréditos familiares llamado 'Entre Amigos Capital'. "
-                "Tu trabajo es ayudar a los administradores a analizar su cartera, evaluar el riesgo de morosidad, sugerir estrategias de cobro amigable "
-                "y responder preguntas basándote en los datos financieros actuales del fondo.\n\n"
-                f"Datos actuales de la cartera del fondo:\n{resumen_texto}"
+            api_key = os.environ.get("GROQ_API_KEY")
+            if not api_key:
+                st.warning("⚠️ No se detectó `GROQ_API_KEY` en el entorno.")
+                api_key_input = st.text_input("Ingresa tu Clave API de Groq:", type="password")
+                if api_key_input:
+                    api_key = api_key_input
+
+        with col_ia2:
+            st.subheader("💬 Área de Consulta")
+            user_prompt = st.text_area(
+                "Escribe tu instrucción para el asistente:", 
+                value="Redacta un mensaje profesional para notificar sobre el estado de un microcrédito familiar y fomentar la puntualidad."
             )
 
-            if "messages_groq" not in st.session_state:
-                st.session_state["messages_groq"] = [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "assistant", "content": "¡Hola! Soy tu asistente financiero de **Entre Amigos Capital** con IA de Groq. ¿En qué te puedo colaborar hoy con la cartera, los créditos o los clientes?"}
-                ]
-
-            # Actualizar el prompt del sistema si cambian los datos
-            st.session_state["messages_groq"][0]["content"] = system_prompt
-
-            for message in st.session_state["messages_groq"]:
-                if message["role"] != "system":
-                    with st.chat_message(message["role"]):
-                        st.markdown(message["content"])
-
-            if prompt_usuario := st.chat_input("Escribe tu consulta financiera o de análisis de cartera..."):
-                st.session_state["messages_groq"].append({"role": "user", "content": prompt_usuario})
-                with st.chat_message("user"):
-                    st.markdown(prompt_usuario)
-
-                with st.chat_message("assistant"):
-                    with st.spinner("Analizando con Groq IA..."):
-                        try:
-                            completion = client_groq.chat.completions.create(
-                                model="llama-3.3-70b-versatile",
-                                messages=st.session_state["messages_groq"],
-                                temperature=0.7,
-                                max_tokens=1024
+            if st.button("Enviar consulta a Groq", type="primary"):
+                if not api_key:
+                    st.error("❌ Se necesita una clave de API válida para comunicarse con Groq.")
+                else:
+                    try:
+                        client = Groq(api_key=api_key)
+                        with st.spinner("Procesando respuesta a alta velocidad..."):
+                            chat_completion = client.chat.completions.create(
+                                messages=[
+                                    {
+                                        "role": "system",
+                                        "content": "Eres un asistente corporativo experto y profesional para el fondo familiar Entre Amigos Capital."
+                                    },
+                                    {
+                                        "role": "user",
+                                        "content": user_prompt,
+                                    }
+                                ],
+                                model=model_choice,
+                                temperature=temperature,
                             )
-                            respuesta_ia = completion.choices[0].message.content
-                            st.markdown(respuesta_ia)
-                            st.session_state["messages_groq"].append({"role": "assistant", "content": respuesta_ia})
-                        except Exception as e:
-                            st.error(f"Error al comunicarse con la API de Groq: {e}")
+                            response_text = chat_completion.choices[0].message.content
+                            st.markdown("### 📋 Resultado:")
+                            st.info(response_text)
+                    except Exception as e:
+                        st.error(f"Ocurrió un error al comunicarse con la API de Groq: {e}")
 
     # =========================================================
     # 8. SOBRE NOSOTROS & POLÍTICAS
