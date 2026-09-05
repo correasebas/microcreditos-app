@@ -907,11 +907,11 @@ if not df_creditos.empty or not df_clientes.empty:
                 st.metric("Total General a Cancelar", f"${total_pagar:,.0f} COP")
 
     # =========================================================
-    # 7. ASISTENTE IA (GROQ) - ACTUALIZADO CON MODELOS VIGENTES
+    # 7. ASISTENTE IA (GROQ) - INTEGRADO CON DATOS EN TIEMPO REAL
     # =========================================================
     elif opcion_menu == "🤖 Asistente IA (Groq)":
         st.title("🤖 Asistente Inteligente con Groq AI")
-        st.markdown("Genera respuestas corporativas, redacta mensajes o analiza escenarios financieros utilizando alta velocidad mediante la API de Groq.")
+        st.markdown("Haz preguntas directas sobre tu fondo (moras, clientes, proyección de intereses, etc.) y la IA analizará tus datos actuales.")
         st.markdown("---")
 
         col_ia1, col_ia2 = st.columns([1, 2])
@@ -927,7 +927,7 @@ if not df_creditos.empty or not df_clientes.empty:
                 ],
                 index=0
             )
-            temperature = st.slider("Temperatura", min_value=0.0, max_value=1.0, value=0.7, step=0.1)
+            temperature = st.slider("Temperatura", min_value=0.0, max_value=1.0, value=0.3, step=0.1)
             
             api_key = os.environ.get("GROQ_API_KEY")
             if not api_key:
@@ -937,24 +937,43 @@ if not df_creditos.empty or not df_clientes.empty:
                     api_key = api_key_input
 
         with col_ia2:
-            st.subheader("💬 Área de Consulta")
+            st.subheader("💬 Pregúntale a tus datos")
+            st.caption("Ejemplos: ¿Cuál es el cliente que está más en mora?, ¿Cuánto se proyecta ganar en intereses?, ¿Qué clientes están al día?")
+            
             user_prompt = st.text_area(
-                "Escribe tu instrucción para el asistente:", 
-                value="Redacta un mensaje profesional para notificar sobre el estado de un microcrédito familiar y fomentar la puntualidad."
+                "Escribe tu pregunta o instrucción:", 
+                value="¿Cuál es el estado actual de la cartera y qué cliente presenta morosidad?"
             )
 
-            if st.button("Enviar consulta a Groq", type="primary"):
+            if st.button("Consultar con IA y Datos", type="primary"):
                 if not api_key:
                     st.error("❌ Se necesita una clave de API válida para comunicarse con Groq.")
                 else:
                     try:
+                        resumen_cartera_df = recalcular_resumen_cartera()
+                        str_resumen = resumen_cartera_df.to_string(index=False) if not resumen_cartera_df.empty else "No disponible"
+                        
+                        str_clientes = df_clientes.to_string(index=False) if not df_clientes.empty else "No disponible"
+                        str_creditos = df_creditos.to_string(index=False) if not df_creditos.empty else "No disponible"
+                        str_estado = df_estado_cartera.to_string(index=False) if not df_estado_cartera.empty else "No disponible"
+
+                        system_context = (
+                            "Eres un analista financiero experto y asistente corporativo del fondo familiar 'Entre Amigos Capital'. "
+                            "Tienes acceso directo a las siguientes tablas de datos actuales del fondo en formato texto. "
+                            "Usa EXCLUSIVAMENTE estos datos para responder las preguntas del administrador de forma precisa, clara y con montos exactos en COP.\n\n"
+                            f"--- RESUMEN DE CARTERA ---\n{str_resumen}\n\n"
+                            f"--- CLIENTES ---\n{str_clientes}\n\n"
+                            f"--- CRÉDITOS ---\n{str_creditos}\n\n"
+                            f"--- ESTADO DE CARTERA Y MORAS ---\n{str_estado}\n"
+                        )
+
                         client = Groq(api_key=api_key)
-                        with st.spinner("Procesando respuesta a alta velocidad..."):
+                        with st.spinner("Analizando la información de tus tablas..."):
                             chat_completion = client.chat.completions.create(
                                 messages=[
                                     {
                                         "role": "system",
-                                        "content": "Eres un asistente corporativo experto y profesional para el fondo familiar Entre Amigos Capital."
+                                        "content": system_context
                                     },
                                     {
                                         "role": "user",
@@ -965,7 +984,7 @@ if not df_creditos.empty or not df_clientes.empty:
                                 temperature=temperature,
                             )
                             response_text = chat_completion.choices[0].message.content
-                            st.markdown("### 📋 Resultado:")
+                            st.markdown("### 📊 Respuesta del Asistente:")
                             st.info(response_text)
                     except Exception as e:
                         st.error(f"Ocurrió un error al comunicarse con la API de Groq: {e}")
