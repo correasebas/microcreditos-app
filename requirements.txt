@@ -4,3 +4,5 @@ openpyxl
 plotly
 fpdf2
 groq
+gspread
+google-auth
