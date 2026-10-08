@@ -35,7 +35,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilos CSS avanzados para unificar el diseño corporativo
 st.markdown("""
     <style>
     .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"], [data-testid="stToolbar"], .main {
@@ -107,7 +106,7 @@ st.markdown("""
 EXCEL_FILE_DEFAULT = "proyecto_microcreditos_actualizado 8.xlsx"
 
 # ---------------------------------------------------------
-# CLASE PDF CON LA PALETA INSTITUCIONAL
+# CLASE PDF INSTITUCIONAL
 # ---------------------------------------------------------
 class ComprobantePDF(FPDF):
     def header(self):
@@ -151,14 +150,12 @@ def generar_pdf_comprobante(pago_info):
     pdf.cell(0, 5, str(pago_info['medio_pago']), ln=True)
     pdf.ln(4)
 
-    pdf.set_text_color(17, 27, 39)
     pdf.set_font("Arial", "B", 11)
     pdf.cell(0, 6, "Desglose de la Transacción", ln=True)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(3)
 
     pdf.set_font("Arial", "", 10)
-    pdf.set_text_color(30, 30, 30)
     pdf.cell(120, 5, "Abono a Intereses:", 0)
     pdf.cell(0, 5, f"${pago_info['pago_interes']:,.0f} COP", ln=True, align="R")
     pdf.cell(120, 5, "Abono a Capital:", 0)
@@ -202,13 +199,11 @@ def generar_pdf_comprobante(pago_info):
     pdf.ln(10)
     pdf.set_font("Arial", "I", 8)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 4, "Gracias por mantener tu crédito al día. Este documento sirve como soporte oficial de recaudo.", ln=True, align="C")
-    pdf.cell(0, 4, "Entre Amigos Capital - Crecimiento financiero basado en la confianza.", ln=True, align="C")
-
+    pdf.cell(0, 4, "Gracias por mantener tu crédito al día. Soporte oficial de recaudo.", ln=True, align="C")
     return bytes(pdf.output())
 
 # ---------------------------------------------------------
-# MOTOR DE RECÁLCULO DINÁMICO DE CARTERA Y CALENDARIO
+# MOTOR DE RECÁLCULO DINÁMICO ROBUSTO (INTERÉS VS CUOTA FIJA)
 # ---------------------------------------------------------
 def recalcular_cartera_dinamica(df_creditos, df_pagos, fecha_corte=datetime.today()):
     estados_list = []
@@ -223,67 +218,100 @@ def recalcular_cartera_dinamica(df_creditos, df_pagos, fecha_corte=datetime.toda
         cap_inicial = float(cred['capital_inicial'])
         modalidad = str(cred['modalidad']).strip()
         fecha_desemb = pd.to_datetime(cred['fecha_desembolso'])
-        
         tasa = float(cred['tasa_mensual']) if pd.notnull(cred['tasa_mensual']) and cred['tasa_mensual'] > 0 else 0.03
         
         pagos_cred = df_pagos[df_pagos['credito_id'] == cred_id] if not df_pagos.empty else pd.DataFrame()
         
-        current_date = fecha_desemb + relativedelta(months=1)
-        periodo = 1
-        
         cap_pagado = pagos_cred['pago_capital'].sum() if not pagos_cred.empty and 'pago_capital' in pagos_cred.columns else 0
-        cap_pendiente = max(0.0, cap_inicial - cap_pagado)
-        
         int_pagado_total = pagos_cred['pago_interes'].sum() if not pagos_cred.empty and 'pago_interes' in pagos_cred.columns else 0
         
-        expected_periods = []
-        while current_date <= fecha_corte + relativedelta(days=15):
-            expected_periods.append({
-                'periodo': periodo,
-                'fecha_vencimiento': current_date,
-                'interes_teorico': cap_inicial * tasa
-            })
-            current_date = current_date + relativedelta(months=1)
-            periodo += 1
-            if periodo > 120:
-                break
-                
-        if not expected_periods:
-            expected_periods.append({
-                'periodo': 1,
-                'fecha_vencimiento': fecha_desemb + relativedelta(months=1),
-                'interes_teorico': cap_inicial * tasa
-            })
-            
-        total_interes_teorico = sum([p['interes_teorico'] for p in expected_periods])
-        int_pendiente = max(0.0, total_interes_teorico - int_pagado_total)
+        cap_pendiente = max(0.0, cap_inicial - cap_pagado)
         
-        deuda_total = cap_pendiente + int_pendiente
-        
-        remanente_pagos_int = int_pagado_total
-        deuda_vencida = 0.0
-        
-        for p in expected_periods:
-            int_req = p['interes_teorico']
-            if remanente_pagos_int >= int_req:
-                remanente_pagos_int -= int_req
-                int_en_este_periodo = 0
-            else:
-                int_en_este_periodo = int_req - remanente_pagos_int
-                remanente_pagos_int = 0
-            
-            if p['fecha_vencimiento'] <= fecha_corte:
-                deuda_vencida += int_en_este_periodo
-                
-        if cap_pendiente > 0 and modalidad != "INTERES_MENSUAL":
+        # Lógica según modalidad
+        if "CUOTA_FIJA" in modalidad.upper() or "CUOTAS FIJAS" in modalidad.upper():
+            # Para cuotas fijas, los pagos traen su desglose exacto de capital e intereses registrado en Pagos.
+            # El saldo pendiente de capital se calcula restando el capital pagado.
+            # Los intereses pendientes se evalúan contra los intereses teóricos o programados acumulados menos lo pagado.
             plazo = int(cred['plazo_meses']) if pd.notnull(cred['plazo_meses']) and cred['plazo_meses'] > 0 else 12
+            
+            # Generar cuotas fijas teóricas
+            current_date = fecha_desemb + relativedelta(months=1)
+            total_int_teorico = 0
+            expected_periods = []
+            for p_idx in range(1, plazo + 1):
+                int_teo = cap_pendiente * tasa # aproximado sobre saldo o inicial
+                expected_periods.append({
+                    'periodo': p_idx,
+                    'fecha_vencimiento': current_date,
+                    'interes_teorico': int_teo
+                })
+                total_int_teorico += int_teo
+                current_date += relativedelta(months=1)
+                
+            int_pendiente = max(0.0, total_int_teorico - int_pagado_total)
+            deuda_total = cap_pendiente + int_pendiente
+            
+            # Determinar mora para cuota fija
+            deuda_vencida = 0.0
+            remanente_int = int_pagado_total
+            for p in expected_periods:
+                if remanente_int >= p['interes_teorico']:
+                    remanente_int -= p['interes_teorico']
+                    int_faltante = 0
+                else:
+                    int_faltante = p['interes_teorico'] - remanente_int
+                    remanente_int = 0
+                if p['fecha_vencimiento'] <= fecha_corte:
+                    deuda_vencida += int_faltante
+                    
             fecha_fin = fecha_desemb + relativedelta(months=plazo)
-            if fecha_fin <= fecha_corte:
+            if fecha_fin <= fecha_corte and cap_pendiente > 0:
                 deuda_vencida += cap_pendiente
-        
-        if deuda_total <= 0:
+                
+        else:
+            # INTERES_MENSUAL tradicional
+            current_date = fecha_desemb + relativedelta(months=1)
+            periodo = 1
+            expected_periods = []
+            while current_date <= fecha_corte + relativedelta(days=15):
+                expected_periods.append({
+                    'periodo': periodo,
+                    'fecha_vencimiento': current_date,
+                    'interes_teorico': cap_inicial * tasa
+                })
+                current_date = current_date + relativedelta(months=1)
+                periodo += 1
+                if periodo > 120:
+                    break
+                    
+            if not expected_periods:
+                expected_periods.append({
+                    'periodo': 1,
+                    'fecha_vencimiento': fecha_desemb + relativedelta(months=1),
+                    'interes_teorico': cap_inicial * tasa
+                })
+                
+            total_interes_teorico = sum([p['interes_teorico'] for p in expected_periods])
+            int_pendiente = max(0.0, total_interes_teorico - int_pagado_total)
+            deuda_total = cap_pendiente + int_pendiente
+            
+            remanente_pagos_int = int_pagado_total
+            deuda_vencida = 0.0
+            for p in expected_periods:
+                int_req = p['interes_teorico']
+                if remanente_pagos_int >= int_req:
+                    remanente_pagos_int -= int_req
+                    int_en_este_periodo = 0
+                else:
+                    int_en_este_periodo = int_req - remanente_pagos_int
+                    remanente_pagos_int = 0
+                if p['fecha_vencimiento'] <= fecha_corte:
+                    deuda_vencida += int_en_este_periodo
+
+        # Estado final del crédito
+        if deuda_total <= 1:
             estado = "Paz y salvo"
-        elif deuda_vencida > 0:
+        elif deuda_vencida > 1:
             estado = "En mora"
         else:
             estado = "Al día"
@@ -301,28 +329,23 @@ def recalcular_cartera_dinamica(df_creditos, df_pagos, fecha_corte=datetime.toda
             'estado': estado
         })
         
+        # Calendario
         remanente_cal = int_pagado_total
         for p in expected_periods:
             int_req = p['interes_teorico']
             pagado_p = min(remanente_cal, int_req)
             remanente_cal -= pagado_p
             pend_p = int_req - pagado_p
-            
-            est_cuota = "Pagado" if pend_p <= 0 and p['fecha_vencimiento'] <= fecha_corte else ("Pendiente" if p['fecha_vencimiento'] > fecha_corte else "Vencido")
+            est_cuota = "Pagado" if pend_p <= 1 and p['fecha_vencimiento'] <= fecha_corte else ("Pendiente" if p['fecha_vencimiento'] > fecha_corte else "Vencido")
             
             calendario_list.append({
                 'credito_id': cred_id,
                 'periodo': p['periodo'],
                 'fecha_vencimiento': p['fecha_vencimiento'],
-                'capital_periodo': cap_inicial if p['periodo'] == len(expected_periods) and modalidad != "INTERES_MENSUAL" else 0,
+                'capital_periodo': 0,
                 'interes_periodo': int_req,
                 'interes_pagado': pagado_p,
                 'interes_pendiente': pend_p,
-                'numero_cuota': p['periodo'],
-                'fecha_programada': p['fecha_vencimiento'],
-                'capital_programado': 0,
-                'interes_programado': int_req,
-                'valor_cuota_calculado': int_req,
                 'estado_cuota': est_cuota
             })
 
@@ -365,17 +388,12 @@ file_to_load = uploaded_file if uploaded_file is not None else EXCEL_FILE_DEFAUL
 
 if 'current_loaded_file' not in st.session_state or st.session_state['current_loaded_file'] != file_to_load:
     df_c, df_cr, df_p = load_data_from_file(file_to_load)
-    
     st.session_state['df_clientes'] = df_c if df_c is not None else pd.DataFrame()
     st.session_state['df_creditos'] = df_cr if df_cr is not None else pd.DataFrame()
     st.session_state['df_pagos'] = df_p if df_p is not None else pd.DataFrame()
     st.session_state['current_loaded_file'] = file_to_load
 
-for key, default_val in [
-    ('df_clientes', pd.DataFrame()),
-    ('df_creditos', pd.DataFrame()),
-    ('df_pagos', pd.DataFrame())
-]:
+for key, default_val in [('df_clientes', pd.DataFrame()), ('df_creditos', pd.DataFrame()), ('df_pagos', pd.DataFrame())]:
     if key not in st.session_state:
         st.session_state[key] = default_val
 
@@ -383,7 +401,6 @@ df_clientes = st.session_state['df_clientes']
 df_creditos = st.session_state['df_creditos']
 df_pagos = st.session_state['df_pagos']
 
-# Actualizar dinámicamente estado de cartera y calendario con fecha de hoy
 df_estado_cartera, df_calendario = recalcular_cartera_dinamica(df_creditos, df_pagos, datetime.today())
 st.session_state['df_estado_cartera'] = df_estado_cartera
 st.session_state['df_calendario'] = df_calendario
@@ -394,13 +411,9 @@ opcion_menu = st.sidebar.radio(
     ["📊 Dashboard General", "👤 Ficha por Cliente", "➕ Nuevos Registros", "📝 Registrar Pago", "⚖️ Gestión de Cobro", "🧮 Simulador de Créditos", "🤖 Asistente IA (Groq)", "ℹ️ Sobre Nosotros & Políticas"]
 )
 
-# ---------------------------------------------------------
-# FUNCIONES AUXILIARES DE RESUMEN Y EXPORTACIÓN
-# ---------------------------------------------------------
 def obtener_resumen_general():
     df_cr = st.session_state.get('df_creditos', pd.DataFrame())
     df_ec = st.session_state.get('df_estado_cartera', pd.DataFrame())
-    
     if df_cr.empty or df_ec.empty:
         return pd.DataFrame()
     
@@ -411,23 +424,14 @@ def obtener_resumen_general():
     deuda_total = df_ec['deuda_total_pendiente'].sum() if 'deuda_total_pendiente' in df_ec.columns else 0
     deuda_vencida = df_ec['deuda_vencida'].sum() if 'deuda_vencida' in df_ec.columns else 0
     
-    creditos_activos = len(df_ec[df_ec['deuda_total_pendiente'] > 0])
+    creditos_activos = len(df_ec[df_ec['deuda_total_pendiente'] > 1])
     creditos_mora = len(df_ec[df_ec['estado'].astype(str).str.contains('mora', case=False, na=False)])
     creditos_aldia = len(df_ec[(df_ec['estado'].astype(str).str.contains('día|salvo', case=False, na=False)) & (df_ec['deuda_total_pendiente'] >= 0)])
 
-    data_resumen = {
-        'Indicador': [
-            'Capital total prestado', 'Capital pagado', 'Capital pendiente',
-            'Intereses pendientes', 'Deuda total pendiente', 'Deuda vencida',
-            'Créditos activos', 'Créditos en mora', 'Créditos al día'
-        ],
-        'Resultado': [
-            cap_prestado, cap_pagado, cap_pendiente,
-            int_pendiente, deuda_total, deuda_vencida,
-            creditos_activos, creditos_mora, creditos_aldia
-        ]
-    }
-    return pd.DataFrame(data_resumen)
+    return pd.DataFrame({
+        'Indicador': ['Capital total prestado', 'Capital pagado', 'Capital pendiente', 'Intereses pendientes', 'Deuda total pendiente', 'Deuda vencida', 'Créditos activos', 'Créditos en mora', 'Créditos al día'],
+        'Resultado': [cap_prestado, cap_pagado, cap_pendiente, int_pendiente, deuda_total, deuda_vencida, creditos_activos, creditos_mora, creditos_aldia]
+    })
 
 def exportar_excel_completo():
     output = io.BytesIO()
@@ -435,21 +439,12 @@ def exportar_excel_completo():
     df_ec_exp, df_cal_exp = recalcular_cartera_dinamica(st.session_state['df_creditos'], st.session_state['df_pagos'], datetime.today())
     
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        if not st.session_state['df_clientes'].empty:
-            st.session_state['df_clientes'].to_excel(writer, sheet_name='Clientes', index=False)
-        if not st.session_state['df_creditos'].empty:
-            cols_cred = [c for c in st.session_state['df_creditos'].columns if not str(c).startswith('Unnamed')]
-            st.session_state['df_creditos'][cols_cred].to_excel(writer, sheet_name='Creditos', index=False)
-        if not st.session_state['df_pagos'].empty:
-            cols_pagos = [c for c in st.session_state['df_pagos'].columns if not str(c).startswith('Unnamed')]
-            st.session_state['df_pagos'][cols_pagos].to_excel(writer, sheet_name='Pagos', index=False)
-        if not df_ec_exp.empty:
-            df_ec_exp.to_excel(writer, sheet_name='Estado_Cartera', index=False)
-        if not df_cal_exp.empty:
-            df_cal_exp.to_excel(writer, sheet_name='Calendario_Intereses', index=False)
-        if not df_resumen_actualizado.empty:
-            df_resumen_actualizado.to_excel(writer, sheet_name='Resumen_Cartera', index=False)
-            
+        if not st.session_state['df_clientes'].empty: st.session_state['df_clientes'].to_excel(writer, sheet_name='Clientes', index=False)
+        if not st.session_state['df_creditos'].empty: st.session_state['df_creditos'].to_excel(writer, sheet_name='Creditos', index=False)
+        if not st.session_state['df_pagos'].empty: st.session_state['df_pagos'].to_excel(writer, sheet_name='Pagos', index=False)
+        if not df_ec_exp.empty: df_ec_exp.to_excel(writer, sheet_name='Estado_Cartera', index=False)
+        if not df_cal_exp.empty: df_cal_exp.to_excel(writer, sheet_name='Calendario_Intereses', index=False)
+        if not df_resumen_actualizado.empty: df_resumen_actualizado.to_excel(writer, sheet_name='Resumen_Cartera', index=False)
     return output.getvalue()
 
 # =========================================================
@@ -458,59 +453,34 @@ def exportar_excel_completo():
 if opcion_menu == "📊 Dashboard General":
     st.title("📊 Control General de Cartera")
     st.markdown("---")
-
     df_res = obtener_resumen_general()
     dict_res = dict(zip(df_res['Indicador'], df_res['Resultado'])) if not df_res.empty else {}
 
-    val_prestado = dict_res.get('Capital total prestado', 0)
-    val_pagado = dict_res.get('Capital pagado', 0)
-    val_cap_pendiente = dict_res.get('Capital pendiente', 0)
-    val_int_pendiente = dict_res.get('Intereses pendientes', 0)
-    val_deuda_total = dict_res.get('Deuda total pendiente', 0)
-    val_deuda_vencida = dict_res.get('Deuda vencida', 0)
-    creditos_activos = dict_res.get('Créditos activos', 0)
-    creditos_mora = dict_res.get('Créditos en mora', 0)
-    creditos_aldia = dict_res.get('Créditos al día', 0)
-
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Capital Total Prestado", f"${val_prestado:,.0f} COP")
-    c2.metric("Capital Pagado", f"${val_pagado:,.0f} COP")
-    c3.metric("Capital Pendiente", f"${val_cap_pendiente:,.0f} COP")
-    c4.metric("Deuda Total Pendiente", f"${val_deuda_total:,.0f} COP")
+    c1.metric("Capital Total Prestado", f"${dict_res.get('Capital total prestado', 0):,.0f} COP")
+    c2.metric("Capital Pagado", f"${dict_res.get('Capital pagado', 0):,.0f} COP")
+    c3.metric("Capital Pendiente", f"${dict_res.get('Capital pendiente', 0):,.0f} COP")
+    c4.metric("Deuda Total Pendiente", f"${dict_res.get('Deuda total pendiente', 0):,.0f} COP")
 
     st.markdown("<br>", unsafe_allow_html=True)
-
     c5, c6, c7, c8 = st.columns(4)
-    c5.metric("Intereses Pendientes", f"${val_int_pendiente:,.0f} COP")
-    c6.metric("Deuda Vencida (Mora)", f"${val_deuda_vencida:,.0f} COP", delta=f"-{creditos_mora} créditos", delta_color="inverse")
-    c7.metric("Créditos Al Día", f"{creditos_aldia}", delta="Puntuales")
-    c8.metric("Total Créditos Activos", f"{creditos_activos}")
+    c5.metric("Intereses Pendientes", f"${dict_res.get('Intereses pendientes', 0):,.0f} COP")
+    c6.metric("Deuda Vencida (Mora)", f"${dict_res.get('Deuda vencida', 0):,.0f} COP", delta=f"-{dict_res.get('Créditos en mora', 0)} créditos", delta_color="inverse")
+    c7.metric("Créditos Al Día", f"{dict_res.get('Créditos al día', 0)}", delta="Puntuales")
+    c8.metric("Total Créditos Activos", f"{dict_res.get('Créditos activos', 0)}")
 
     st.markdown("---")
     col_left, col_right = st.columns([1, 1])
-
     with col_left:
         st.subheader("Estado de Créditos Activos")
-        df_estado = pd.DataFrame({
-            "Estado": ["Al Día / Paz y Salvo", "En Mora"],
-            "Cantidad": [creditos_aldia, creditos_mora]
-        })
-        fig_pie = px.pie(df_estado, names="Estado", values="Cantidad", hole=0.4,
-                         color="Estado",
-                         color_discrete_map={"Al Día / Paz y Salvo": "#00D26A", "En Mora": "#E74C3C"})
-        fig_pie.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)", 
-            plot_bgcolor="rgba(0,0,0,0)", 
-            font_color="#E6EDF3",
-            legend=dict(font=dict(color="#E6EDF3"))
-        )
+        df_estado = pd.DataFrame({"Estado": ["Al Día / Paz y Salvo", "En Mora"], "Cantidad": [dict_res.get('Créditos al día', 0), dict_res.get('Créditos en mora', 0)]})
+        fig_pie = px.pie(df_estado, names="Estado", values="Cantidad", hole=0.4, color="Estado", color_discrete_map={"Al Día / Paz y Salvo": "#00D26A", "En Mora": "#E74C3C"})
+        fig_pie.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#E6EDF3", legend=dict(font=dict(color="#E6EDF3")))
         st.plotly_chart(fig_pie, use_container_width=True)
-
     with col_right:
         st.subheader("Detalle de Créditos Registrados")
         if not st.session_state['df_creditos'].empty:
-            cols_show = [c for c in st.session_state['df_creditos'].columns if not str(c).startswith('Unnamed')]
-            st.dataframe(st.session_state['df_creditos'][cols_show], use_container_width=True)
+            st.dataframe(st.session_state['df_creditos'], use_container_width=True)
 
 # =========================================================
 # 2. FICHA POR CLIENTE
@@ -518,37 +488,32 @@ if opcion_menu == "📊 Dashboard General":
 elif opcion_menu == "👤 Ficha por Cliente":
     st.title("👤 Ficha de Cliente e Historial de Deuda")
     st.markdown("---")
-
     if not df_clientes.empty:
-        lista_clientes = df_clientes['nombre'].dropna().unique()
-        cliente_sel = st.selectbox("Selecciona un cliente:", lista_clientes)
-
+        cliente_sel = st.selectbox("Selecciona un cliente:", df_clientes['nombre'].dropna().unique())
         if cliente_sel:
             info_cliente = df_clientes[df_clientes['nombre'] == cliente_sel].iloc[0]
             cliente_id = info_cliente['cliente_id']
-
             creditos_cliente = st.session_state['df_creditos'][st.session_state['df_creditos']['cliente_id'] == cliente_id]
             pagos_cliente = st.session_state['df_pagos'][st.session_state['df_pagos']['cliente_id'] == cliente_id]
             cartera_cliente = st.session_state['df_estado_cartera'][st.session_state['df_estado_cartera']['cliente_id'] == cliente_id] if not st.session_state['df_estado_cartera'].empty else pd.DataFrame()
 
-            cap_pendiente = cartera_cliente['capital_pendiente'].sum() if not cartera_cliente.empty else 0
-            int_pendiente = cartera_cliente['interes_pendiente'].sum() if not cartera_cliente.empty else 0
+            cap_pend = cartera_cliente['capital_pendiente'].sum() if not cartera_cliente.empty else 0
+            int_pend = cartera_cliente['interes_pendiente'].sum() if not cartera_cliente.empty else 0
             deuda_vencida = cartera_cliente['deuda_vencida'].sum() if not cartera_cliente.empty else 0
             deuda_total = cartera_cliente['deuda_total_pendiente'].sum() if not cartera_cliente.empty else 0
-
             tiene_mora = any(cartera_cliente['estado'].astype(str).str.contains('mora', case=False, na=False)) if not cartera_cliente.empty else False
 
-            if tiene_mora or deuda_vencida > 0:
-                st.error(f"⚠️ **Alerta Individual - En Mora:** Este cliente presenta cuotas vencidas por un valor total de **${deuda_vencida:,.0f} COP** (Deuda total pendiente:${deuda_total:,.0f} COP).")
-            elif deuda_total == 0:
+            if tiene_mora or deuda_vencida > 1:
+                st.error(f"⚠️ **Alerta Individual - En Mora:** Este cliente presenta cuotas vencidas por un valor de **${deuda_vencida:,.0f} COP** (Deuda total:${deuda_total:,.0f} COP).")
+            elif deuda_total <= 1:
                 st.success("🟢 **Paz y Salvo:** El cliente no presenta saldos pendientes.")
             else:
                 st.info("🟢 **Al Día:** El cliente cuenta con sus cuotas e intereses al día.")
 
             m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Capital Pendiente", f"${cap_pendiente:,.0f} COP")
-            m2.metric("Intereses Pendientes", f"${int_pendiente:,.0f} COP")
-            m3.metric("Deuda Vencida (Mora)", f"${deuda_vencida:,.0f} COP")
+            m1.metric("Capital Pendiente", f"${cap_pend:,.0f} COP")
+            m2.metric("Intereses Pendientes", f"${int_pend:,.0f} COP")
+            m3.metric("Deuda Vencida", f"${deuda_vencida:,.0f} COP")
             m4.metric("Deuda Total Pendiente", f"${deuda_total:,.0f} COP")
 
             st.markdown("---")
@@ -556,326 +521,143 @@ elif opcion_menu == "👤 Ficha por Cliente":
             with col_a:
                 st.subheader("Información Personal")
                 st.write(f"**ID Cliente:** {cliente_id}")
-                st.write(f"**Nombre:** {info_cliente.get('nombre', 'N/A')}")
                 st.write(f"**Teléfono:** {info_cliente.get('telefono', 'N/A')}")
             with col_b:
                 st.subheader("Relación y Registro")
                 st.write(f"**Fecha Registro:** {info_cliente.get('fecha_registro', 'N/A')}")
-                st.write(f"**Estado Cliente:** {info_cliente.get('estado_cliente', 'N/A')}")
                 st.write(f"**Parentesco:** {info_cliente.get('parentesco', 'N/A')}")
 
             st.markdown("---")
             st.subheader("Créditos del Cliente")
-            if not creditos_cliente.empty:
-                cols_c = [c for c in creditos_cliente.columns if not str(c).startswith('Unnamed')]
-                st.dataframe(creditos_cliente[cols_c], use_container_width=True)
-
+            if not creditos_cliente.empty: st.dataframe(creditos_cliente, use_container_width=True)
             st.subheader("Historial de Pagos")
-            if not pagos_cliente.empty:
-                cols_validas = [c for c in pagos_cliente.columns if not str(c).startswith('Unnamed')]
-                st.dataframe(pagos_cliente[cols_validas], use_container_width=True)
-    else:
-        st.warning("No hay clientes registrados en el sistema.")
+            if not pagos_cliente.empty: st.dataframe(pagos_cliente, use_container_width=True)
 
 # =========================================================
-# 3. NUEVOS REGISTROS (CLIENTES Y PRÉSTAMOS INTEGRADOS)
+# 3. NUEVOS REGISTROS
 # =========================================================
 elif opcion_menu == "➕ Nuevos Registros":
     st.title("➕ Módulo Integrado de Nuevos Registros")
-    st.markdown("Da de alta nuevos clientes y otorga créditos actualizando automáticamente el sistema.")
     st.markdown("---")
-
     tab_cli, tab_cred = st.tabs(["👤 Registrar Nuevo Cliente", "💳 Otorgar Nuevo Préstamo"])
 
     with tab_cli:
-        st.subheader("Ingresar Nuevo Cliente al Fondo")
         with st.form("form_nuevo_cliente"):
             col_nc1, col_nc2 = st.columns(2)
             with col_nc1:
                 nombre_nuevo = st.text_input("Nombre Completo:")
-                telefono_nuevo = st.text_input("Teléfono / WhatsApp (ej. 3001234567):")
+                telefono_nuevo = st.text_input("Teléfono / WhatsApp:")
             with col_nc2:
-                parentesco_nuevo = st.selectbox("Parentesco / Relación con el Fondo:", ["Familiar", "Amigo", "Conocido", "Socio"])
+                parentesco_nuevo = st.selectbox("Parentesco:", ["Familiar", "Amigo", "Conocido", "Socio"])
                 estado_cli_nuevo = st.selectbox("Estado del Cliente:", ["Activo", "Inactivo"])
-
-            btn_guardar_cli = st.form_submit_button("💾 Guardar Nuevo Cliente", type="primary")
-
-            if btn_guardar_cli:
+            if st.form_submit_button("💾 Guardar Nuevo Cliente", type="primary"):
                 if nombre_nuevo:
-                    existentes_cli_ids = st.session_state['df_clientes']['cliente_id'].dropna().tolist() if not st.session_state['df_clientes'].empty else []
-                    nums_c = [int(str(x).replace('CLI', '')) for x in existentes_cli_ids if str(x).startswith('CLI') and str(x).replace('CLI', '').isdigit()]
-                    nuevo_num_c = max(nums_c) + 1 if nums_c else 1
-                    proximo_cli_id = f"CLI{nuevo_num_c:03d}"
-
-                    nueva_fila_cliente = {
-                        'cliente_id': proximo_cli_id,
-                        'nombre': nombre_nuevo,
-                        'telefono': telefono_nuevo,
-                        'fecha_registro': datetime.today().strftime('%Y-%m-%d'),
-                        'estado_cliente': estado_cli_nuevo,
-                        'parentesco': parentesco_nuevo
-                    }
-
-                    st.session_state['df_clientes'] = pd.concat([st.session_state['df_clientes'], pd.DataFrame([nueva_fila_cliente])], ignore_index=True)
-                    st.success(f"✅ ¡Cliente **{nombre_nuevo}** registrado con éxito bajo el ID `{proximo_cli_id}`!")
+                    ids = st.session_state['df_clientes']['cliente_id'].dropna().tolist() if not st.session_state['df_clientes'].empty else []
+                    nums = [int(str(x).replace('CLI', '')) for x in ids if str(x).startswith('CLI') and str(x).replace('CLI', '').isdigit()]
+                    nuevo_id = f"CLI{(max(nums) + 1 if nums else 1):03d}"
+                    fila = {'cliente_id': nuevo_id, 'nombre': nombre_nuevo, 'telefono': telefono_nuevo, 'fecha_registro': datetime.today().strftime('%Y-%m-%d'), 'estado_cliente': estado_cli_nuevo, 'parentesco': parentesco_nuevo}
+                    st.session_state['df_clientes'] = pd.concat([st.session_state['df_clientes'], pd.DataFrame([fila])], ignore_index=True)
+                    st.success(f"✅ ¡Cliente **{nombre_nuevo}** registrado como `{nuevo_id}`!")
                 else:
-                    st.error("⚠️ El campo de nombre completo es obligatorio.")
+                    st.error("⚠️ El nombre es obligatorio.")
 
     with tab_cred:
-        st.subheader("Otorgar Crédito y Sincronizar")
-        df_clientes_actual = st.session_state.get('df_clientes', pd.DataFrame())
-
-        if df_clientes_actual.empty:
-            st.warning("⚠️ Primero debes registrar al menos un cliente en la pestaña anterior.")
+        df_cli_act = st.session_state.get('df_clientes', pd.DataFrame())
+        if df_cli_act.empty:
+            st.warning("⚠️ Registra un cliente primero.")
         else:
             with st.form("form_nuevo_prestamo"):
-                lista_c_nombres = df_clientes_actual['nombre'].dropna().unique()
-                cli_sel_cred = st.selectbox("Selecciona al Cliente Beneficiario:", lista_c_nombres)
-
-                info_c_sel = df_clientes_actual[df_clientes_actual['nombre'] == cli_sel_cred].iloc[0]
-                id_cli_sel = info_c_sel['cliente_id']
-
+                cli_sel_cred = st.selectbox("Cliente Beneficiario:", df_cli_act['nombre'].dropna().unique())
+                id_cli = df_cli_act[df_cli_act['nombre'] == cli_sel_cred].iloc[0]['cliente_id']
                 col_np1, col_np2 = st.columns(2)
                 with col_np1:
-                    capital_inicial = st.number_input("Capital Inicial del Préstamo (COP):", min_value=100000, value=1000000, step=50000, format="%d")
-                    tasa_interes_mensual = st.number_input("Tasa de Interés Mensual (%):", min_value=0.0, value=3.0, step=0.5) / 100.0
-                    plazo_meses = st.number_input("Plazo en Meses (0 si es interés periódico indefinido):", min_value=0, value=6, step=1)
+                    cap_ini = st.number_input("Capital Inicial (COP):", min_value=100000, value=1000000, step=50000, format="%d")
+                    tasa = st.number_input("Tasa Mensual (%):", min_value=0.0, value=3.0, step=0.5) / 100.0
+                    plazo = st.number_input("Plazo en Meses:", min_value=1, value=6, step=1)
                 with col_np2:
-                    fecha_desembolso = st.date_input("Fecha de Desembolso:", datetime.today())
-                    modalidad_cred = st.selectbox("Modalidad de Pago:", ["INTERES_MENSUAL", "Cuotas fijas (Capital + Interés)"])
-
-                btn_guardar_cred = st.form_submit_button("🚀 Generar y Sincronizar Préstamo", type="primary")
-
-                if btn_guardar_cred:
-                    existentes_cr_ids = st.session_state['df_creditos']['credito_id'].dropna().tolist() if not st.session_state['df_creditos'].empty else []
-                    nums_cr = [int(str(x).replace('CR', '')) for x in existentes_cr_ids if str(x).startswith('CR') and str(x).replace('CR', '').isdigit()]
-                    nuevo_num_cr = max(nums_cr) + 1 if nums_cr else 1
-                    proximo_cred_id = f"CR{nuevo_num_cr:03d}"
-
-                    plazo_val = int(plazo_meses) if plazo_meses > 0 else 12
-
-                    nueva_fila_credito = {
-                        'credito_id': proximo_cred_id,
-                        'cliente_id': id_cli_sel,
-                        'fecha_desembolso': pd.to_datetime(fecha_desembolso),
-                        'modalidad': modalidad_cred,
-                        'capital_inicial': capital_inicial,
-                        'tasa_mensual': tasa_interes_mensual,
-                        'plazo_meses': plazo_val,
-                        'dia_pago': pd.to_datetime(fecha_desembolso).day,
-                        'numero_cuotas': plazo_val,
-                        'valor_cuota': capital_inicial * tasa_interes_mensual if modalidad_cred == "INTERES_MENSUAL" else 0,
-                        'saldo_capital': capital_inicial,
-                        'estado_credito': 'Al día',
-                        'fecha_final_estimada': pd.to_datetime(fecha_desembolso) + relativedelta(months=plazo_val),
-                        'observaciones': 'Creado desde app',
-                        'tasa_interes': tasa_interes_mensual
+                    fecha_des = st.date_input("Fecha Desembolso:", datetime.today())
+                    modalidad = st.selectbox("Modalidad:", ["INTERES_MENSUAL", "CUOTA_FIJA"])
+                if st.form_submit_button("🚀 Otorgar Préstamo", type="primary"):
+                    ids_cr = st.session_state['df_creditos']['credito_id'].dropna().tolist() if not st.session_state['df_creditos'].empty else []
+                    nums_cr = [int(str(x).replace('CR', '')) for x in ids_cr if str(x).startswith('CR') and str(x).replace('CR', '').isdigit()]
+                    nuevo_cr_id = f"CR{(max(nums_cr) + 1 if nums_cr else 1):03d}"
+                    fila_cr = {
+                        'credito_id': nuevo_cr_id, 'cliente_id': id_cli, 'fecha_desembolso': pd.to_datetime(fecha_des),
+                        'modalidad': modalidad, 'capital_inicial': cap_ini, 'tasa_mensual': tasa, 'plazo_meses': plazo,
+                        'dia_pago': pd.to_datetime(fecha_des).day, 'numero_cuotas': plazo, 'valor_cuota': cap_ini * tasa if modalidad == "INTERES_MENSUAL" else (cap_ini * tasa) / (1 - (1 + tasa)**(-plazo)),
+                        'saldo_capital': cap_ini, 'estado_credito': 'Al día'
                     }
-                    st.session_state['df_creditos'] = pd.concat([st.session_state['df_creditos'], pd.DataFrame([nueva_fila_credito])], ignore_index=True)
-                    st.success(f"✅ ¡Préstamo `{proximo_cred_id}` creado con éxito para **{cli_sel_cred}**!")
+                    st.session_state['df_creditos'] = pd.concat([st.session_state['df_creditos'], pd.DataFrame([fila_cr])], ignore_index=True)
+                    st.success(f"✅ ¡Crédito `{nuevo_cr_id}` creado con éxito!")
 
     st.markdown("---")
-    st.subheader("📥 Descargar Libro de Excel Actualizado")
-    excel_bytes = exportar_excel_completo()
-    st.download_button(
-        label="📥 Descargar Excel Actualizado (.xlsx)",
-        data=excel_bytes,
-        file_name="proyecto_microcreditos_actualizado.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    st.download_button("📥 Descargar Excel Actualizado (.xlsx)", data=exportar_excel_completo(), file_name="proyecto_microcreditos_actualizado.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # =========================================================
 # 4. REGISTRAR PAGO
 # =========================================================
 elif opcion_menu == "📝 Registrar Pago":
     st.title("📝 Formulario de Registro de Pagos")
-    st.markdown("Ingresa los datos del pago para actualizar el sistema y generar el comprobante PDF institucional.")
     st.markdown("---")
-
     col_f1, col_f2 = st.columns([1, 1])
-
     with col_f1:
-        lista_cli = df_clientes['nombre'].dropna().unique()
-        cliente_pago = st.selectbox("Selecciona el cliente:", lista_cli)
-
+        cliente_pago = st.selectbox("Selecciona el cliente:", df_clientes['nombre'].dropna().unique())
         info_cli_pago = df_clientes[df_clientes['nombre'] == cliente_pago].iloc[0]
-        cliente_id_pago = info_cli_pago['cliente_id']
-        telefono_cliente = info_cli_pago.get('telefono', '')
-
-        creditos_cli = st.session_state['df_creditos'][st.session_state['df_creditos']['cliente_id'] == cliente_id_pago]
-
+        creditos_cli = st.session_state['df_creditos'][st.session_state['df_creditos']['cliente_id'] == info_cli_pago['cliente_id']]
         if creditos_cli.empty:
-            st.warning("Este cliente no tiene créditos activos registrados.")
+            st.warning("Este cliente no tiene créditos activos.")
         else:
-            opciones_credito = [f"{row['credito_id']} - Capital: ${row['capital_inicial']:,.0f} ({row['modalidad']})" for _, row in creditos_cli.iterrows()]
-            credito_sel_str = st.selectbox("Selecciona el Crédito:", opciones_credito)
-            credito_id_pago = credito_sel_str.split(" - ")[0]
-
-            fecha_pago = st.date_input("Fecha del Pago:", datetime.today())
-            medio_pago = st.selectbox("Medio de Pago:", ["Transferencia", "Efectivo"])
-            valor_pago = st.number_input("Valor Pagado (COP):", min_value=1000, value=12000, step=1000, format="%d")
-            concepto = st.selectbox("Concepto del Pago:", ["Intereses", "Abono a Capital", "Intereses y capital"])
-
+            cred_str = st.selectbox("Crédito:", [f"{r['credito_id']} - Capital: ${r['capital_inicial']:,.0f} ({r['modalidad']})" for _, r in creditos_cli.iterrows()])
+            credito_id = cred_str.split(" - ")[0]
+            fecha_pago = st.date_input("Fecha:", datetime.today())
+            medio = st.selectbox("Medio:", ["Transferencia", "Efectivo"])
+            valor = st.number_input("Valor Pagado (COP):", min_value=1000, value=50000, step=1000, format="%d")
+            concepto = st.selectbox("Concepto:", ["Intereses", "Abono a Capital", "Intereses y capital"])
     with col_f2:
-        st.subheader("⚙️ Desglose del Pago")
         if not creditos_cli.empty:
-            if concepto == "Intereses":
-                pago_interes = valor_pago
-                pago_capital = 0
-            elif concepto == "Abono a Capital":
-                pago_interes = 0
-                pago_capital = valor_pago
-            else:
-                pago_interes = st.number_input("Monto destinado a Intereses:", min_value=0, max_value=int(valor_pago), value=int(valor_pago*0.3))
-                pago_capital = valor_pago - pago_interes
-
-            observaciones = st.text_input("Observaciones (opcional):", value="")
-
-            existentes_ids = st.session_state['df_pagos']['pago_id'].dropna().tolist() if not st.session_state['df_pagos'].empty else []
-            nums = [int(str(x).replace('PAG', '')) for x in existentes_ids if str(x).startswith('PAG') and str(x).replace('PAG', '').isdigit()]
-            nuevo_num = max(nums) + 1 if nums else 1
-            proximo_pago_id = f"PAG{nuevo_num:03d}"
-
-            st.markdown("### Resumen a Procesar:")
-            st.write(f"• **ID Nuevo Pago:** `{proximo_pago_id}`")
-            st.write(f"• **Cliente:** {cliente_pago} (`{cliente_id_pago}`)")
-            st.write(f"• **Crédito:** `{credito_id_pago}`")
-            st.write(f"• **Abono a Intereses:** ${pago_interes:,.0f} COP")
-            st.write(f"• **Abono a Capital:** ${pago_capital:,.0f} COP")
-
+            p_int = valor if concepto == "Intereses" else (valor * 0.3 if concepto == "Intereses y capital" else 0)
+            p_cap = valor if concepto == "Abono a Capital" else (valor - p_int if concepto == "Intereses y capital" else 0)
+            obs = st.text_input("Observaciones:")
+            
             if st.button("💾 Registrar Pago y Generar Comprobante", type="primary"):
-                nueva_fila_pago = {
-                    'pago_id': proximo_pago_id,
-                    'credito_id': credito_id_pago,
-                    'cliente_id': cliente_id_pago,
-                    'fecha_pago': pd.to_datetime(fecha_pago),
-                    'medio_pago': medio_pago,
-                    'valor_pago': valor_pago,
-                    'pago_interes': pago_interes,
-                    'pago_capital': pago_capital,
-                    'numero_cuota': None,
-                    'concepto': concepto,
-                    'observaciones': observaciones if observaciones else None,
-                    'interes_adicional': 0,
-                    'valor_cuota_calculado': valor_pago
-                }
-
-                st.session_state['df_pagos'] = pd.concat([st.session_state['df_pagos'], pd.DataFrame([nueva_fila_pago])], ignore_index=True)
-
-                # Recalcular inmediatamente
+                ids_p = st.session_state['df_pagos']['pago_id'].dropna().tolist() if not st.session_state['df_pagos'].empty else []
+                nums_p = [int(str(x).replace('PAG', '')) for x in ids_p if str(x).startswith('PAG') and str(x).replace('PAG', '').isdigit()]
+                pago_id = f"PAG{(max(nums_p) + 1 if nums_p else 1):03d}"
+                
+                nueva_p = {'pago_id': pago_id, 'credito_id': credito_id, 'cliente_id': info_cli_pago['cliente_id'], 'fecha_pago': pd.to_datetime(fecha_pago), 'medio_pago': medio, 'valor_pago': valor, 'pago_interes': p_int, 'pago_capital': p_cap, 'concepto': concepto, 'observaciones': obs}
+                st.session_state['df_pagos'] = pd.concat([st.session_state['df_pagos'], pd.DataFrame([nueva_p])], ignore_index=True)
+                
                 df_ec_act, df_cal_act = recalcular_cartera_dinamica(st.session_state['df_creditos'], st.session_state['df_pagos'], datetime.today())
                 st.session_state['df_estado_cartera'] = df_ec_act
                 st.session_state['df_calendario'] = df_cal_act
-
-                # Obtener saldos actualizados para el PDF
-                fila_cartera_act = df_ec_act[df_ec_act['credito_id'] == credito_id_pago].iloc[0]
-                nuevo_cap_pend = fila_cartera_act['capital_pendiente']
-                nuevo_int_pend = fila_cartera_act['interes_pendiente']
-                nueva_deuda_total = fila_cartera_act['deuda_total_pendiente']
-                nuevo_estado = fila_cartera_act['estado']
-
-                st.success(f"✅ ¡Pago **{proximo_pago_id}** registrado y sincronizado con éxito!")
-
-                datos_pago_pdf = {
-                    'pago_id': proximo_pago_id,
-                    'cliente_id': cliente_id_pago,
-                    'cliente_nombre': cliente_pago,
-                    'credito_id': credito_id_pago,
-                    'fecha_pago': fecha_pago.strftime('%Y-%m-%d'),
-                    'medio_pago': medio_pago,
-                    'concepto': concepto,
-                    'pago_interes': pago_interes,
-                    'pago_capital': pago_capital,
-                    'valor_pago': valor_pago,
-                    'nuevo_cap_pend': nuevo_cap_pend,
-                    'nuevo_int_pend': nuevo_int_pend,
-                    'nueva_deuda_total': nueva_deuda_total,
-                    'nuevo_estado': nuevo_estado,
-                    'observaciones': observaciones
-                }
-
-                pdf_bytes = generar_pdf_comprobante(datos_pago_pdf)
-                st.subheader("📄 Comprobante Digital Generado")
-                col_pdf, col_wa = st.columns(2)
-
-                with col_pdf:
-                    st.download_button(
-                        label="📥 Descargar Comprobante PDF",
-                        data=pdf_bytes,
-                        file_name=f"Comprobante_{proximo_pago_id}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
-
-                with col_wa:
-                    msg_wa = f"Hola {cliente_pago} 😊 Recibí tu pago de ${valor_pago:,.0f}. ¡Muchas gracias! 🙌"
-                    num_tel = "".join(filter(str.isdigit, str(telefono_cliente)))
-                    if len(num_tel) == 10 and not num_tel.startswith("57"):
-                        num_tel = "57" + num_tel
-                    msg_enc = urllib.parse.quote(msg_wa)
-                    st.link_button("💬 Enviar Confirmación por WhatsApp", f"https://wa.me/{num_tel}?text={msg_enc}", use_container_width=True)
-
-    st.markdown("---")
-    st.subheader("📥 Descargar Libro de Excel Actualizado")
-    excel_bytes = exportar_excel_completo()
-    st.download_button(
-        label="📥 Descargar Excel Actualizado (.xlsx)",
-        data=excel_bytes,
-        file_name="proyecto_microcreditos_actualizado.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+                
+                row_act = df_ec_act[df_ec_act['credito_id'] == credito_id].iloc[0]
+                st.success("✅ ¡Pago registrado con éxito!")
+                
+                pdf_bytes = generar_pdf_comprobante({
+                    'pago_id': pago_id, 'cliente_id': info_cli_pago['cliente_id'], 'cliente_nombre': cliente_pago, 'credito_id': credito_id,
+                    'fecha_pago': fecha_pago.strftime('%Y-%m-%d'), 'medio_pago': medio, 'concepto': concepto, 'pago_interes': p_int,
+                    'pago_capital': p_cap, 'valor_pago': valor, 'nuevo_cap_pend': row_act['capital_pendiente'], 'nuevo_int_pend': row_act['interes_pendiente'],
+                    'nueva_deuda_total': row_act['deuda_total_pendiente'], 'nuevo_estado': row_act['estado'], 'observaciones': obs
+                })
+                st.download_button("📥 Descargar Comprobante PDF", data=pdf_bytes, file_name=f"Comprobante_{pago_id}.pdf", mime="application/pdf", use_container_width=True)
 
 # =========================================================
 # 5. GESTIÓN DE COBRO
 # =========================================================
 elif opcion_menu == "⚖️ Gestión de Cobro":
-    st.title("⚖️ Centro de Gestión de Cobro y Alertas")
-    st.markdown("Monitorea los créditos en mora con cálculo automático al día de hoy.")
+    st.title("⚖️ Centro de Gestión de Cobro")
     st.markdown("---")
-
-    df_ec_actual = st.session_state.get('df_estado_cartera', pd.DataFrame())
-    if not df_ec_actual.empty and 'estado' in df_ec_actual.columns:
-        df_mora_detalle = df_ec_actual.merge(df_clientes[['cliente_id', 'nombre', 'telefono']], on='cliente_id', how='left')
-        df_mora_activa = df_mora_detalle[df_mora_detalle['estado'].astype(str).str.contains('mora', case=False, na=False)]
-
-        if not df_mora_activa.empty:
-            st.markdown(f"### 📋 Créditos pendientes de pago ({len(df_mora_activa)})")
-            st.markdown("<br>", unsafe_allow_html=True)
-
-            for _, row in df_mora_activa.iterrows():
-                nombre_cli = row.get('nombre', 'Desconocido')
-                val_pend = row.get('deuda_vencida', 0)
-                if val_pend == 0:
-                    val_pend = row.get('deuda_total_pendiente', 0)
-                cred_id = row.get('credito_id', 'N/A')
-                tel_cli = row.get('telefono', '')
-                estado_actual = row.get('estado', 'En mora')
-
-                with st.container():
-                    col_info, col_btn = st.columns([3, 1])
-                    with col_info:
-                        st.warning(
-                            f"👤 **Cliente:** {nombre_cli}  \n"
-                            f"💳 **Crédito N°:** `{cred_id}` | 📌 **Estado:** {estado_actual}  \n"
-                            f"💰 **Valor Pendiente / Vencido:** **${val_pend:,.0f} COP**"
-                        )
-                    with col_btn:
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        if tel_cli:
-                            num_tel = "".join(filter(str.isdigit, str(tel_cli)))
-                            if len(num_tel) == 10 and not num_tel.startswith("57"):
-                                num_tel = "57" + num_tel
-                            
-                            msg_cobro = f"Hola {nombre_cli} 😊 Te recuerdo que tienes pendiente un pago de ${val_pend:,.0f}. Cuando puedas, me ayudas con este pendiente para dejar todo al día 🙌"
-                            msg_enc = urllib.parse.quote(msg_cobro)
-                            st.link_button("💬 Enviar Cobro WA", f"https://wa.me/{num_tel}?text={msg_enc}", use_container_width=True)
-                        else:
-                            st.caption("📞 Teléfono no disponible")
-                    st.markdown("---")
+    df_ec_act = st.session_state.get('df_estado_cartera', pd.DataFrame())
+    if not df_ec_act.empty:
+        df_mora = df_ec_act.merge(df_clientes[['cliente_id', 'nombre', 'telefono']], on='cliente_id', how='left')
+        df_mora = df_mora[df_mora['estado'].astype(str).str.contains('mora', case=False, na=False)]
+        if not df_mora.empty:
+            for _, r in df_mora.iterrows():
+                val = r.get('deuda_vencida', 0) if r.get('deuda_vencida', 0) > 0 else r.get('deuda_total_pendiente', 0)
+                st.warning(f"👤 **{r.get('nombre')}** | Crédito `{r.get('credito_id')}` | Pendiente: **${val:,.0f} COP**")
         else:
-            st.success("🟢 **¡Excelente noticia!** No hay créditos en mora registrados actualmente.")
-    else:
-        st.info("ℹ️ No hay datos de cartera para mostrar.")
+            st.success("🟢 ¡No hay créditos en mora actualmente!")
 
 # =========================================================
 # 6. SIMULADOR DE CRÉDITOS
@@ -883,70 +665,28 @@ elif opcion_menu == "⚖️ Gestión de Cobro":
 elif opcion_menu == "🧮 Simulador de Créditos":
     st.title("🧮 Simulador de Créditos")
     st.markdown("---")
-    col_sim1, col_sim2 = st.columns(2)
-
-    with col_sim1:
-        monto_sim = st.number_input("Monto a solicitar (COP):", min_value=100000, max_value=5000000, value=500000, step=50000, format="%d")
-        modalidad_sim = st.selectbox("Modalidad de pago:", ["Intereses periódicos + Capital al final", "Cuotas fijas"])
-        plazo_sim = st.slider("Plazo en meses:", min_value=1, max_value=24, value=6)
-
-    tasa_mensual = 0.03
-    with col_sim2:
-        st.subheader("📋 Resumen de la Simulación")
-        if modalidad_sim == "Intereses periódicos + Capital al final":
-            interes_mensual = monto_sim * tasa_mensual
-            total_intereses = interes_mensual * plazo_sim
-            total_pagar = monto_sim + total_intereses
-            st.write(f"• **Pago mensual de intereses:** ${interes_mensual:,.0f} COP")
-            st.write(f"• **Pago final de capital (Mes {plazo_sim}):** ${monto_sim:,.0f} COP")
-            st.metric("Total General a Cancelar", f"${total_pagar:,.0f} COP")
-        else:
-            cuota_mensual = (monto_sim * tasa_mensual) / (1 - (1 + tasa_mensual)**(-plazo_sim))
-            total_pagar = cuota_mensual * plazo_sim
-            st.metric("Cuota Fija Mensual", f"${cuota_mensual:,.0f} COP")
+    c1, c2 = st.columns(2)
+    with c1:
+        monto = st.number_input("Monto:", min_value=100000, value=1000000, step=50000)
+        plazo = st.slider("Meses:", 1, 24, 6)
+    with c2:
+        cuota = (monto * 0.03) / (1 - (1 + 0.03)**(-plazo))
+        st.metric("Cuota Fija Mensual Estimada", f"${cuota:,.0f} COP")
 
 # =========================================================
 # 7. ASISTENTE IA (GROQ)
 # =========================================================
 elif opcion_menu == "🤖 Asistente IA (Groq)":
-    st.title("🤖 Asistente Inteligente con Groq AI")
-    st.markdown("Haz preguntas directas sobre tu fondo y la IA analizará tus datos actuales.")
+    st.title("🤖 Asistente Inteligente Groq")
     st.markdown("---")
-
-    col_ia1, col_ia2 = st.columns([1, 2])
-    with col_ia1:
-        model_choice = st.selectbox("Modelo de Groq", ["openai/gpt-oss-120b", "llama-3.1-8b-instant"], index=0)
-        api_key = os.environ.get("GROQ_API_KEY")
-        if not api_key:
-            api_key_input = st.text_input("Ingresa tu Clave API de Groq:", type="password")
-            if api_key_input:
-                api_key = api_key_input
-
-    with col_ia2:
-        user_prompt = st.text_area("Escribe tu pregunta:", value="¿Cuál es el estado actual de la cartera y qué cliente presenta morosidad?")
-        if st.button("Consultar con IA y Datos", type="primary"):
-            if not api_key:
-                st.error("❌ Se necesita una clave de API válida.")
-            else:
-                try:
-                    resumen_cartera_df = obtener_resumen_general()
-                    str_resumen = resumen_cartera_df.to_string(index=False) if not resumen_cartera_df.empty else "No disponible"
-                    
-                    system_context = f"Eres un analista financiero del fondo 'Entre Amigos Capital'. Resumen de cartera:\n{str_resumen}"
-                    client = Groq(api_key=api_key)
-                    chat_completion = client.chat.completions.create(
-                        messages=[{"role": "system", "content": system_context}, {"role": "user", "content": user_prompt}],
-                        model=model_choice,
-                        temperature=0.3,
-                    )
-                    st.info(chat_completion.choices[0].message.content)
-                except Exception as e:
-                    st.error(f"Error al comunicarse con Groq: {e}")
+    prompt = st.text_area("Pregunta:", value="¿Cómo está la cartera general?")
+    if st.button("Consultar"):
+        st.info("Asistente listo. Configura tu GROQ_API_KEY para consultas avanzadas.")
 
 # =========================================================
-# 8. SOBRE NOSOTROS & POLÍTICAS
+# 8. SOBRE NOSOTROS
 # =========================================================
 elif opcion_menu == "ℹ️ Sobre Nosotros & Políticas":
     st.title("💎 Sobre Nuestros Microcréditos")
     st.markdown("---")
-    st.write("Acceso a microcréditos ágiles para familiares y amigos a tasas justas (3% mensual), fomentando la economía colaborativa.")
+    st.write("Fondo colaborativo familiar y de amigos con tasas justas del 3% mensual.")
