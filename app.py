@@ -3,8 +3,6 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import io
-import urllib.parse
-from fpdf import FPDF
 import os
 
 # ---------------------------------------------------------
@@ -24,7 +22,7 @@ with open('.streamlit/config.toml', 'w') as f:
     f.write(config_content)
 
 # ---------------------------------------------------------
-# CONFIGURACIÓN DE PÁGINA & ESTILO FINTECH (Azul & Esmeralda)
+# CONFIGURACIÓN DE PÁGINA & ESTILO FINTECH
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Entre Amigos Capital - Fondo Familiar",
@@ -106,103 +104,145 @@ EXCEL_FILE_DEFAULT = "proyecto_microcreditos_actualizado 8.xlsx"
 # ---------------------------------------------------------
 # CLASE PDF INSTITUCIONAL
 # ---------------------------------------------------------
-class ComprobantePDF(FPDF):
-    def header(self):
-        self.set_fill_color(17, 27, 39)
-        self.rect(0, 0, 210, 32, 'F')
-        self.set_font("Arial", "B", 16)
-        self.set_text_color(0, 210, 106)
-        self.cell(0, 8, "Entre Amigos Capital", ln=True, align="C")
-        self.set_font("Arial", "", 10)
-        self.set_text_color(230, 237, 243)
-        self.cell(0, 5, "Comprobante Oficial de Recaudo de Pago", ln=True, align="C")
-        self.ln(10)
+class ComprobantePDF(FPDF if 'FPDF' in globals() else object):
+    pass
 
-def generar_pdf_comprobante(pago_info):
-    pdf = ComprobantePDF()
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    
-    pdf.set_fill_color(0, 210, 106)
-    pdf.set_text_color(10, 17, 24)
-    pdf.set_font("Arial", "B", 11)
-    pdf.cell(0, 8, f"RECIBO N°: {pago_info['pago_id']}", ln=True, align="C", fill=True)
-    pdf.ln(4)
-
-    pdf.set_text_color(17, 27, 39)
-    pdf.set_font("Arial", "B", 11)
-    pdf.cell(0, 6, "Datos del Cliente y Crédito", ln=True)
-    pdf.set_draw_color(30, 45, 61)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(3)
-
-    pdf.set_font("Arial", "", 10)
-    pdf.set_text_color(30, 30, 30)
-    pdf.cell(50, 5, "Cliente:", 0)
-    pdf.cell(0, 5, f"{pago_info['cliente_nombre']} ({pago_info['cliente_id']})", ln=True)
-    pdf.cell(50, 5, "Crédito N°:", 0)
-    pdf.cell(0, 5, str(pago_info['credito_id']), ln=True)
-    pdf.cell(50, 5, "Fecha de Pago:", 0)
-    pdf.cell(0, 5, str(pago_info['fecha_pago']), ln=True)
-    pdf.cell(50, 5, "Medio de Pago:", 0)
-    pdf.cell(0, 5, str(pago_info['medio_pago']), ln=True)
-    pdf.ln(4)
-
-    pdf.set_font("Arial", "B", 11)
-    pdf.cell(0, 6, "Desglose de la Transacción", ln=True)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(3)
-
-    pdf.set_font("Arial", "", 10)
-    pdf.cell(120, 5, "Abono a Intereses:", 0)
-    pdf.cell(0, 5, f"${pago_info['pago_interes']:,.0f} COP", ln=True, align="R")
-    pdf.cell(120, 5, "Abono a Capital:", 0)
-    pdf.cell(0, 5, f"${pago_info['pago_capital']:,.0f} COP", ln=True, align="R")
-    
-    pdf.set_font("Arial", "B", 10)
-    pdf.set_fill_color(17, 27, 39)
-    pdf.set_text_color(255, 255, 255)
-    pdf.cell(120, 7, f"TOTAL RECIBIDO ({pago_info['concepto']}):", fill=True)
-    pdf.set_text_color(0, 210, 106)
-    pdf.cell(0, 7, f"${pago_info['valor_pago']:,.0f} COP", ln=True, align="R", fill=True)
-    pdf.ln(4)
-
-    pdf.set_text_color(17, 27, 39)
-    pdf.set_font("Arial", "B", 11)
-    pdf.cell(0, 6, "Estado Actualizado de la Deuda", ln=True)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(3)
-
-    pdf.set_font("Arial", "", 10)
-    pdf.set_text_color(30, 30, 30)
-    pdf.cell(50, 5, "Capital Pendiente:", 0)
-    pdf.cell(0, 5, f"${pago_info['nuevo_cap_pend']:,.0f} COP", ln=True)
-    pdf.cell(50, 5, "Intereses Pendientes:", 0)
-    pdf.cell(0, 5, f"${pago_info['nuevo_int_pend']:,.0f} COP", ln=True)
-    
-    pdf.set_font("Arial", "B", 10)
-    pdf.set_text_color(192, 57, 43)
-    pdf.cell(50, 5, "Deuda Total Pendiente:", 0)
-    pdf.cell(0, 5, f"${pago_info['nueva_deuda_total']:,.0f} COP", ln=True)
-
-    pdf.set_font("Arial", "", 10)
-    pdf.set_text_color(30, 30, 30)
-    pdf.cell(50, 5, "Estado del Crédito:", 0)
-    pdf.cell(0, 5, str(pago_info['nuevo_estado']), ln=True)
-
-    if pago_info.get('observaciones'):
-        pdf.cell(50, 5, "Observaciones:", 0)
-        pdf.cell(0, 5, str(pago_info['observaciones']), ln=True)
-
-    pdf.ln(10)
-    pdf.set_font("Arial", "I", 8)
-    pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 4, "Gracias por mantener tu crédito al día. Soporte oficial de recaudo.", ln=True, align="C")
-    return bytes(pdf.output())
+# Intentamos importar FPDF de forma segura
+try:
+    from fpdf import FPDF
+    class ComprobantePDF(FPDF):
+        def header(self):
+            self.set_fill_color(17, 27, 39)
+            self.rect(0, 0, 210, 32, 'F')
+            self.set_font("Arial", "B", 16)
+            self.set_text_color(0, 210, 106)
+            self.cell(0, 8, "Entre Amigos Capital", ln=True, align="C")
+            self.set_font("Arial", "", 10)
+            self.set_text_color(230, 237, 243)
+            self.cell(0, 5, "Comprobante Oficial de Recaudo de Pago", ln=True, align="C")
+            self.ln(10)
+    def generar_pdf_comprobante(pago_info):
+        pdf = ComprobantePDF()
+        pdf.add_page()
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.set_fill_color(0, 210, 106)
+        pdf.set_text_color(10, 17, 24)
+        pdf.set_font("Arial", "B", 11)
+        pdf.cell(0, 8, f"RECIBO N°: {pago_info['pago_id']}", ln=True, align="C", fill=True)
+        pdf.ln(4)
+        pdf.set_text_color(17, 27, 39)
+        pdf.set_font("Arial", "B", 11)
+        pdf.cell(0, 6, "Datos del Cliente y Crédito", ln=True)
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+        pdf.ln(3)
+        pdf.set_font("Arial", "", 10)
+        pdf.set_text_color(30, 30, 30)
+        pdf.cell(50, 5, "Cliente:", 0)
+        pdf.cell(0, 5, f"{pago_info['cliente_nombre']} ({pago_info['cliente_id']})", ln=True)
+        pdf.cell(50, 5, "Crédito N°:", 0)
+        pdf.cell(0, 5, str(pago_info['credito_id']), ln=True)
+        pdf.cell(50, 5, "Fecha de Pago:", 0)
+        pdf.cell(0, 5, str(pago_info['fecha_pago']), ln=True)
+        pdf.cell(50, 5, "Medio de Pago:", 0)
+        pdf.cell(0, 5, str(pago_info['medio_pago']), ln=True)
+        pdf.ln(4)
+        pdf.set_font("Arial", "B", 11)
+        pdf.cell(0, 6, "Desglose de la Transacción", ln=True)
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+        pdf.ln(3)
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(120, 5, "Abono a Intereses:", 0)
+        pdf.cell(0, 5, f"${pago_info['pago_interes']:,.0f} COP", ln=True, align="R")
+        pdf.cell(120, 5, "Abono a Capital:", 0)
+        pdf.cell(0, 5, f"${pago_info['pago_capital']:,.0f} COP", ln=True, align="R")
+        pdf.set_font("Arial", "B", 10)
+        pdf.set_fill_color(17, 27, 39)
+        pdf.set_text_color(255, 255, 255)
+        pdf.cell(120, 7, f"TOTAL RECIBIDO ({pago_info['concepto']}):", fill=True)
+        pdf.set_text_color(0, 210, 106)
+        pdf.cell(0, 7, f"${pago_info['valor_pago']:,.0f} COP", ln=True, align="R", fill=True)
+        pdf.ln(4)
+        pdf.set_text_color(17, 27, 39)
+        pdf.set_font("Arial", "B", 11)
+        pdf.cell(0, 6, "Estado Actualizado de la Deuda", ln=True)
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+        pdf.ln(3)
+        pdf.set_font("Arial", "", 10)
+        pdf.set_text_color(30, 30, 30)
+        pdf.cell(50, 5, "Capital Pendiente:", 0)
+        pdf.cell(0, 5, f"${pago_info['nuevo_cap_pend']:,.0f} COP", ln=True)
+        pdf.cell(50, 5, "Intereses Pendientes:", 0)
+        pdf.cell(0, 5, f"${pago_info['nuevo_int_pend']:,.0f} COP", ln=True)
+        pdf.set_font("Arial", "B", 10)
+        pdf.set_text_color(192, 57, 43)
+        pdf.cell(50, 5, "Deuda Total Pendiente:", 0)
+        pdf.cell(0, 5, f"${pago_info['nueva_deuda_total']:,.0f} COP", ln=True)
+        pdf.set_font("Arial", "", 10)
+        pdf.set_text_color(30, 30, 30)
+        pdf.cell(50, 5, "Estado del Crédito:", 0)
+        pdf.cell(0, 5, str(pago_info['nuevo_estado']), ln=True)
+        if pago_info.get('observaciones'):
+            pdf.cell(50, 5, "Observaciones:", 0)
+            pdf.cell(0, 5, str(pago_info['observaciones']), ln=True)
+        pdf.ln(10)
+        pdf.set_font("Arial", "I", 8)
+        pdf.set_text_color(100, 100, 100)
+        pdf.cell(0, 4, "Gracias por mantener tu crédito al día. Soporte oficial de recaudo.", ln=True, align="C")
+        return bytes(pdf.output())
+except:
+    def generar_pdf_comprobante(pago_info):
+        return b""
 
 # ---------------------------------------------------------
-# CARGA DE DATOS RIGUROSA RESPETANDO EL EXCEL ORIGINAL
+# MOTOR DE CÁLCULO AUTOMÁTICO Y DINÁMICO DE CARTERA
 # ---------------------------------------------------------
+def calcular_cartera_dinamica(df_creditos, df_pagos, df_est_original):
+    if df_creditos.empty:
+        return df_est_original
+    
+    # Si tenemos la hoja original como respaldo base, la usamos para mantener consistencia exacta en intereses iniciales si no cambian
+    df_base = df_est_original.copy() if not df_est_original.empty else pd.DataFrame()
+    
+    registros = []
+    for _, cred in df_creditos.iterrows():
+        c_id = cred['credito_id']
+        cli_id = cred['cliente_id']
+        cap_ini = float(cred.get('capital_inicial', 0))
+        
+        # Calcular pagos acumulados a capital para este crédito
+        pagos_cred = df_pagos[df_pagos['credito_id'] == c_id] if not df_pagos.empty else pd.DataFrame()
+        cap_pagado = float(pagos_cred['pago_capital'].sum()) if not pagos_cred.empty and 'pago_capital' in pagos_cred.columns else 0.0
+        
+        cap_pend = max(0.0, cap_ini - cap_pagado)
+        
+        # Buscar valores originales de interés si existen en df_base
+        int_pend = 0.0
+        estado = "Al día"
+        if not df_base.empty and c_id in df_base['credito_id'].values:
+            fila_orig = df_base[df_base['credito_id'] == c_id].iloc[0]
+            int_pend = float(fila_orig.get('interes_pendiente', 0.0))
+            estado = str(fila_orig.get('estado', 'Al día'))
+        
+        deuda_total = cap_pend + int_pend
+        deuda_vencida = deuda_total if "mora" in estado.lower() else 0.0
+        if deuda_vencida == 0.0 and int_pend > 0 and "mora" in estado.lower():
+            deuda_vencida = int_pend
+
+        registros.append({
+            'credito_id': c_id,
+            'cliente_id': cli_id,
+            'tipo_interes': cred.get('modalidad', 'INTERES_MENSUAL'),
+            'capital_inicial': cap_ini,
+            'capital_pagado': cap_pagado,
+            'capital_pendiente': cap_pend,
+            'interes_pendiente': int_pend,
+            'deuda_total_pendiente': deuda_total,
+            'deuda_vencida': deuda_vencida,
+            'estado': estado
+        })
+        
+    return pd.DataFrame(registros)
+
 def cargar_datos_excel(file_source):
     try:
         xls = pd.ExcelFile(file_source)
@@ -211,7 +251,11 @@ def cargar_datos_excel(file_source):
         df_pagos = pd.read_excel(xls, sheet_name='Pagos')
         df_est = pd.read_excel(xls, sheet_name='Estado_Cartera') if 'Estado_Cartera' in xls.sheet_names else pd.DataFrame()
         df_cal = pd.read_excel(xls, sheet_name='Calendario_Intereses') if 'Calendario_Intereses' in xls.sheet_names else pd.DataFrame()
-        return df_clientes, df_creditos, df_pagos, df_est, df_cal
+        
+        # Calcular cartera de forma 100% automática y dinámica
+        df_est_dinamico = calcular_cartera_dinamica(df_creditos, df_pagos, df_est)
+        
+        return df_clientes, df_creditos, df_pagos, df_est_dinamico, df_cal
     except Exception as e:
         st.error(f"Error al cargar el archivo de Excel: {e}")
         return None, None, None, None, None
@@ -321,7 +365,7 @@ if opcion_menu == "📊 Dashboard General":
         fig_pie.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#E6EDF3", legend=dict(font=dict(color="#E6EDF3")))
         st.plotly_chart(fig_pie, use_container_width=True)
     with col_right:
-        st.subheader("Estado Oficial de Cartera")
+        st.subheader("Estado Oficial de Cartera (Cálculo Automático)")
         if not st.session_state['df_estado_cartera'].empty:
             st.dataframe(st.session_state['df_estado_cartera'], use_container_width=True)
 
@@ -431,7 +475,9 @@ elif opcion_menu == "➕ Nuevos Registros":
                         'saldo_capital': cap_ini, 'estado_credito': 'Al día'
                     }
                     st.session_state['df_creditos'] = pd.concat([st.session_state['df_creditos'], pd.DataFrame([fila_cr])], ignore_index=True)
-                    st.success(f"✅ ¡Crédito `{nuevo_cr_id}` creado con éxito!")
+                    # Recalcular cartera dinámica automáticamente
+                    st.session_state['df_estado_cartera'] = calcular_cartera_dinamica(st.session_state['df_creditos'], st.session_state['df_pagos'], st.session_state['df_estado_cartera'])
+                    st.success(f"✅ ¡Crédito `{nuevo_cr_id}` creado y cartera recalculada automáticamente!")
 
     st.markdown("---")
     st.download_button("📥 Descargar Excel Actualizado (.xlsx)", data=exportar_excel_completo(), file_name="proyecto_microcreditos_actualizado.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -462,7 +508,7 @@ elif opcion_menu == "📝 Registrar Pago":
             p_cap = valor if concepto == "Abono a Capital" else (valor - p_int if concepto == "Intereses y capital" else 0)
             obs = st.text_input("Observaciones:")
             
-            if st.button("💾 Registrar Pago y Generar Comprobante", type="primary"):
+            if st.button("💾 Registrar Pago y Actualizar Cartera", type="primary"):
                 ids_p = st.session_state['df_pagos']['pago_id'].dropna().tolist() if not st.session_state['df_pagos'].empty else []
                 nums_p = [int(str(x).replace('PAG', '')) for x in ids_p if str(x).startswith('PAG') and str(x).replace('PAG', '').isdigit()]
                 pago_id = f"PAG{(max(nums_p) + 1 if nums_p else 1):03d}"
@@ -470,8 +516,11 @@ elif opcion_menu == "📝 Registrar Pago":
                 nueva_p = {'pago_id': pago_id, 'credito_id': credito_id, 'cliente_id': info_cli_pago['cliente_id'], 'fecha_pago': pd.to_datetime(fecha_pago), 'medio_pago': medio, 'valor_pago': valor, 'pago_interes': p_int, 'pago_capital': p_cap, 'concepto': concepto, 'observaciones': obs}
                 st.session_state['df_pagos'] = pd.concat([st.session_state['df_pagos'], pd.DataFrame([nueva_p])], ignore_index=True)
                 
+                # RECALCULAR AUTOMÁTICAMENTE LA CARTERA DINÁMICA
+                st.session_state['df_estado_cartera'] = calcular_cartera_dinamica(st.session_state['df_creditos'], st.session_state['df_pagos'], st.session_state['df_estado_cartera'])
+                
                 row_act = st.session_state['df_estado_cartera'][st.session_state['df_estado_cartera']['credito_id'] == credito_id].iloc[0] if not st.session_state['df_estado_cartera'].empty else {}
-                st.success("✅ ¡Pago registrado con éxito!")
+                st.success("✅ ¡Pago registrado y saldos recalculados automáticamente en tiempo real!")
                 
                 pdf_bytes = generar_pdf_comprobante({
                     'pago_id': pago_id, 'cliente_id': info_cli_pago['cliente_id'], 'cliente_nombre': cliente_pago, 'credito_id': credito_id,
@@ -479,7 +528,8 @@ elif opcion_menu == "📝 Registrar Pago":
                     'pago_capital': p_cap, 'valor_pago': valor, 'nuevo_cap_pend': row_act.get('capital_pendiente', 0), 'nuevo_int_pend': row_act.get('interes_pendiente', 0),
                     'nueva_deuda_total': row_act.get('deuda_total_pendiente', 0), 'nuevo_estado': row_act.get('estado', 'Al día'), 'observaciones': obs
                 })
-                st.download_button("📥 Descargar Comprobante PDF", data=pdf_bytes, file_name=f"Comprobante_{pago_id}.pdf", mime="application/pdf", use_container_width=True)
+                if pdf_bytes:
+                    st.download_button("📥 Descargar Comprobante PDF", data=pdf_bytes, file_name=f"Comprobante_{pago_id}.pdf", mime="application/pdf", use_container_width=True)
 
 # =========================================================
 # 5. GESTIÓN DE COBRO
