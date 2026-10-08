@@ -298,4 +298,45 @@ def cargar_datos_completos(file_source):
         df_pagos = pd.read_excel(xls, sheet_name='Pagos')
         df_cal = pd.read_excel(xls, sheet_name='Calendario_Intereses') if 'Calendario_Intereses' in xls.sheet_names else pd.DataFrame()
         
-        df_est_dinamico = calcular
+        df_est_dinamico = calcular_cartera_dinamica(df_creditos, df_pagos)
+        return df_clientes, df_creditos, df_pagos, df_est_dinamico, df_cal
+    except Exception as e:
+        st.error(f"Error al cargar el archivo de Excel: {e}")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+if 'current_loaded_file' not in st.session_state or st.session_state['current_loaded_file'] != file_to_load or uploaded_file is not None:
+    df_c, df_cr, df_p, df_est, df_cal = cargar_datos_completos(file_to_load)
+    st.session_state['df_clientes'] = df_c
+    st.session_state['df_creditos'] = df_cr
+    st.session_state['df_pagos'] = df_p
+    st.session_state['df_estado_cartera'] = df_est
+    st.session_state['df_calendario'] = df_cal
+    st.session_state['current_loaded_file'] = file_to_load
+
+df_clientes = st.session_state['df_clientes']
+df_creditos = st.session_state['df_creditos']
+df_pagos = st.session_state['df_pagos']
+df_estado_cartera = st.session_state['df_estado_cartera']
+
+st.sidebar.markdown("---")
+opcion_menu = st.sidebar.radio(
+    "Selecciona una sección:",
+    ["📊 Dashboard General", "👤 Ficha por Cliente", "➕ Nuevos Registros", "📝 Registrar Pago", "⚖️ Gestión de Cobro", "🧮 Simulador de Créditos", "🤖 Asistente IA (Groq)", "ℹ️ Sobre Nosotros & Políticas"]
+)
+
+def obtener_resumen_general():
+    df_ec = st.session_state.get('df_estado_cartera', pd.DataFrame())
+    df_cr = st.session_state.get('df_creditos', pd.DataFrame())
+    if df_ec.empty:
+        return pd.DataFrame()
+    
+    cap_prestado = df_cr['capital_inicial'].sum() if not df_cr.empty else df_ec['capital_inicial'].sum()
+    cap_pagado = df_ec['capital_pagado'].sum() if 'capital_pagado' in df_ec.columns else 0
+    cap_pendiente = df_ec['capital_pendiente'].sum() if 'capital_pendiente' in df_ec.columns else 0
+    int_pendiente = df_ec['interes_pendiente'].sum() if 'interes_pendiente' in df_ec.columns else 0
+    deuda_total = df_ec['deuda_total_pendiente'].sum() if 'deuda_total_pendiente' in df_ec.columns else 0
+    deuda_vencida = df_ec['deuda_vencida'].sum() if 'deuda_vencida' in df_ec.columns else 0
+    
+    creditos_activos = len(df_ec[df_ec['deuda_total_pendiente'] > 1])
+    creditos_mora = len(df_ec[df_ec['estado'].astype(str).str.contains('mora', case=False, na=False)])
+    creditos_aldia = len(df_ec[df_ec['estado'].astype(str).str.contains('día|salvo', case=False, na=
