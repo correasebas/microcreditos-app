@@ -555,4 +555,61 @@ elif opcion_menu == "📝 Registrar Pago":
                     pdf_bytes = generar_pdf_comprobante({
                         'pago_id': pago_id, 'cliente_id': info_cli_pago['cliente_id'], 'cliente_nombre': cliente_pago, 'credito_id': credito_id,
                         'fecha_pago': fecha_pago.strftime('%Y-%m-%d'), 'medio_pago': medio, 'concepto': concepto, 'pago_interes': p_int,
-                        'pago_capital
+                        'pago_capital': p_cap, 'valor_pago': valor, 'nuevo_cap_pend': row_act.get('capital_pendiente', 0), 'nuevo_int_pend': row_act.get('interes_pendiente', 0),
+                        'nueva_deuda_total': row_act.get('deuda_total_pendiente', 0), 'nuevo_estado': row_act.get('estado', 'Al día'), 'observaciones': obs
+                    })
+                    if pdf_bytes:
+                        st.download_button("📥 Descargar Comprobante PDF", data=pdf_bytes, file_name=f"Comprobante_{pago_id}.pdf", mime="application/pdf", use_container_width=True)
+    else:
+        st.warning("⚠️ No hay clientes cargados para registrar pagos.")
+
+# =========================================================
+# 5. GESTIÓN DE COBRO
+# =========================================================
+elif opcion_menu == "⚖️ Gestión de Cobro":
+    st.title("⚖️ Centro de Gestión de Cobro")
+    st.markdown("---")
+    df_ec_act = st.session_state.get('df_estado_cartera', pd.DataFrame())
+    if not df_ec_act.empty:
+        df_mora = df_ec_act.merge(df_clientes[['cliente_id', 'nombre', 'telefono']], on='cliente_id', how='left')
+        df_mora = df_mora[df_mora['estado'].astype(str).str.contains('mora', case=False, na=False)]
+        if not df_mora.empty:
+            for _, r in df_mora.iterrows():
+                val = r.get('deuda_vencida', 0) if r.get('deuda_vencida', 0) > 0 else r.get('deuda_total_pendiente', 0)
+                st.warning(f"👤 **{r.get('nombre')}** | Crédito `{r.get('credito_id')}` | Pendiente: **${val:,.0f} COP**")
+        else:
+            st.success("🟢 ¡No hay créditos en mora actualmente!")
+    else:
+        st.info("Sube tu archivo Excel para ver el estado de cobro.")
+
+# =========================================================
+# 6. SIMULADOR DE CRÉDITOS
+# =========================================================
+elif opcion_menu == "🧮 Simulador de Créditos":
+    st.title("🧮 Simulador de Créditos")
+    st.markdown("---")
+    c1, c2 = st.columns(2)
+    with c1:
+        monto = st.number_input("Monto:", min_value=100000, value=1000000, step=50000)
+        plazo = st.slider("Meses:", 1, 24, 6)
+    with c2:
+        cuota = (monto * 0.03) / (1 - (1 + 0.03)**(-plazo))
+        st.metric("Cuota Fija Mensual Estimada", f"${cuota:,.0f} COP")
+
+# =========================================================
+# 7. ASISTENTE IA (GROQ)
+# =========================================================
+elif opcion_menu == "🤖 Asistente IA (Groq)":
+    st.title("🤖 Asistente Inteligente Groq")
+    st.markdown("---")
+    prompt = st.text_area("Pregunta:", value="¿Cómo está la cartera general?")
+    if st.button("Consultar"):
+        st.info("Asistente listo. Configura tu GROQ_API_KEY para consultas avanzadas.")
+
+# =========================================================
+# 8. SOBRE NOSOTROS
+# =========================================================
+elif opcion_menu == "ℹ️ Sobre Nosotros & Políticas":
+    st.title("💎 Sobre Nuestros Microcréditos")
+    st.markdown("---")
+    st.write("Fondo colaborativo familiar y de amigos con tasas justas del 3% mensual.")
