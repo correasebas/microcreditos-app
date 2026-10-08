@@ -3,7 +3,10 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import io
+import urllib.parse
 import os
+from dateutil.relativedelta import relativedelta
+from groq import Groq
 
 # ---------------------------------------------------------
 # 0. CONFIGURACIÓN NATIVA DE STREAMLIT (config.toml)
@@ -104,10 +107,6 @@ EXCEL_FILE_DEFAULT = "proyecto_microcreditos_actualizado 8.xlsx"
 # ---------------------------------------------------------
 # CLASE PDF INSTITUCIONAL
 # ---------------------------------------------------------
-class ComprobantePDF(FPDF if 'FPDF' in globals() else object):
-    pass
-
-# Intentamos importar FPDF de forma segura
 try:
     from fpdf import FPDF
     class ComprobantePDF(FPDF):
@@ -121,6 +120,7 @@ try:
             self.set_text_color(230, 237, 243)
             self.cell(0, 5, "Comprobante Oficial de Recaudo de Pago", ln=True, align="C")
             self.ln(10)
+
     def generar_pdf_comprobante(pago_info):
         pdf = ComprobantePDF()
         pdf.add_page()
@@ -146,6 +146,7 @@ try:
         pdf.cell(50, 5, "Medio de Pago:", 0)
         pdf.cell(0, 5, str(pago_info['medio_pago']), ln=True)
         pdf.ln(4)
+        pdf.set_text_color(17, 27, 39)
         pdf.set_font("Arial", "B", 11)
         pdf.cell(0, 6, "Desglose de la Transacción", ln=True)
         pdf.line(10, pdf.get_y(), 200, pdf.get_y())
@@ -194,28 +195,24 @@ except:
         return b""
 
 # ---------------------------------------------------------
-# MOTOR DE CÁLCULO AUTOMÁTICO Y DINÁMICO DE CARTERA
+# MOTOR DE CÁLCULO DINÁMICO DE CARTERA
 # ---------------------------------------------------------
 def calcular_cartera_dinamica(df_creditos, df_pagos, df_est_original):
     if df_creditos.empty:
         return df_est_original
     
-    # Si tenemos la hoja original como respaldo base, la usamos para mantener consistencia exacta en intereses iniciales si no cambian
     df_base = df_est_original.copy() if not df_est_original.empty else pd.DataFrame()
-    
     registros = []
+    
     for _, cred in df_creditos.iterrows():
         c_id = cred['credito_id']
         cli_id = cred['cliente_id']
         cap_ini = float(cred.get('capital_inicial', 0))
         
-        # Calcular pagos acumulados a capital para este crédito
         pagos_cred = df_pagos[df_pagos['credito_id'] == c_id] if not df_pagos.empty else pd.DataFrame()
         cap_pagado = float(pagos_cred['pago_capital'].sum()) if not pagos_cred.empty and 'pago_capital' in pagos_cred.columns else 0.0
-        
         cap_pend = max(0.0, cap_ini - cap_pagado)
         
-        # Buscar valores originales de interés si existen en df_base
         int_pend = 0.0
         estado = "Al día"
         if not df_base.empty and c_id in df_base['credito_id'].values:
@@ -240,28 +237,10 @@ def calcular_cartera_dinamica(df_creditos, df_pagos, df_est_original):
             'deuda_vencida': deuda_vencida,
             'estado': estado
         })
-        
     return pd.DataFrame(registros)
 
-def cargar_datos_excel(file_source):
-    try:
-        xls = pd.ExcelFile(file_source)
-        df_clientes = pd.read_excel(xls, sheet_name='Clientes')
-        df_creditos = pd.read_excel(xls, sheet_name='Creditos')
-        df_pagos = pd.read_excel(xls, sheet_name='Pagos')
-        df_est = pd.read_excel(xls, sheet_name='Estado_Cartera') if 'Estado_Cartera' in xls.sheet_names else pd.DataFrame()
-        df_cal = pd.read_excel(xls, sheet_name='Calendario_Intereses') if 'Calendario_Intereses' in xls.sheet_names else pd.DataFrame()
-        
-        # Calcular cartera de forma 100% automática y dinámica
-        df_est_dinamico = calcular_cartera_dinamica(df_creditos, df_pagos, df_est)
-        
-        return df_clientes, df_creditos, df_pagos, df_est_dinamico, df_cal
-    except Exception as e:
-        st.error(f"Error al cargar el archivo de Excel: {e}")
-        return None, None, None, None, None
-
 # ---------------------------------------------------------
-# CARGA INICIAL DESDE EL EXCEL
+# CARGA DE DATOS DESDE EL EXCEL
 # ---------------------------------------------------------
 st.sidebar.title("💎 Entre Amigos Capital")
 st.sidebar.caption("Fondo de Inversión y Microcréditos Familiares")
@@ -271,23 +250,35 @@ st.sidebar.subheader("📂 Base de Datos Excel")
 uploaded_file = st.sidebar.file_uploader(
     "Carga tu archivo de Excel actualizado:", 
     type=["xlsx"],
-    help="Si no subes un archivo, se cargará el archivo base por defecto."
+    help="Sube tu archivo .xlsx actualizado para sincronizar la aplicación."
 )
 
 file_to_load = uploaded_file if uploaded_file is not None else EXCEL_FILE_DEFAULT
 
-if 'current_loaded_file' not in st.session_state or st.session_state['current_loaded_file'] != file_to_load:
-    df_c, df_cr, df_p, df_est, df_cal = cargar_datos_excel(file_to_load)
+def cargar_datos_completos(file_source):
+    try:
+        xls = pd.ExcelFile(file_source)
+        df_clientes = pd.read_excel(xls, sheet_name='Clientes')
+        df_creditos = pd.read_excel(xls, sheet_name='Creditos')
+        df_pagos = pd.read_excel(xls, sheet_name='Pagos')
+        df_est = pd.read_excel(xls, sheet_name='Estado_Cartera') if 'Estado_Cartera' in xls.sheet_names else pd.DataFrame()
+        df_cal = pd.read_excel(xls, sheet_name='Calendario_Intereses') if 'Calendario_Intereses' in xls.sheet_names else pd.DataFrame()
+        
+        # Calcular cartera automáticamente
+        df_est_dinamico = calcular_cartera_dinamica(df_creditos, df_pagos, df_est)
+        return df_clientes, df_creditos, df_pagos, df_est_dinamico, df_cal
+    except Exception as e:
+        st.error(f"Error al cargar el archivo de Excel: {e}")
+        return None, None, None, None, None
+
+if 'current_loaded_file' not in st.session_state or st.session_state['current_loaded_file'] != file_to_load or uploaded_file is not None:
+    df_c, df_cr, df_p, df_est, df_cal = cargar_datos_completos(file_to_load)
     st.session_state['df_clientes'] = df_c if df_c is not None else pd.DataFrame()
     st.session_state['df_creditos'] = df_cr if df_cr is not None else pd.DataFrame()
     st.session_state['df_pagos'] = df_p if df_p is not None else pd.DataFrame()
     st.session_state['df_estado_cartera'] = df_est if df_est is not None else pd.DataFrame()
     st.session_state['df_calendario'] = df_cal if df_cal is not None else pd.DataFrame()
     st.session_state['current_loaded_file'] = file_to_load
-
-for key, default_val in [('df_clientes', pd.DataFrame()), ('df_creditos', pd.DataFrame()), ('df_pagos', pd.DataFrame()), ('df_estado_cartera', pd.DataFrame())]:
-    if key not in st.session_state:
-        st.session_state[key] = default_val
 
 df_clientes = st.session_state['df_clientes']
 df_creditos = st.session_state['df_creditos']
@@ -391,7 +382,7 @@ elif opcion_menu == "👤 Ficha por Cliente":
             tiene_mora = any(cartera_cliente['estado'].astype(str).str.contains('mora', case=False, na=False)) if not cartera_cliente.empty else False
 
             if tiene_mora or deuda_vencida > 1:
-                st.error(f"⚠️ **Alerta Individual - En Mora:** Este cliente presenta cuotas vencidas por un valor de **${deuda_vencida:,.0f} COP** (Deuda total:${deuda_total:,.0f} COP).")
+                st.error(f"⚠️ **Alerta Individual - En Mora:** Cuotas vencidas por **${deuda_vencida:,.0f} COP** (Total:${deuda_total:,.0f} COP).")
             elif deuda_total <= 1:
                 st.success("🟢 **Paz y Salvo:** El cliente no presenta saldos pendientes.")
             else:
@@ -475,7 +466,6 @@ elif opcion_menu == "➕ Nuevos Registros":
                         'saldo_capital': cap_ini, 'estado_credito': 'Al día'
                     }
                     st.session_state['df_creditos'] = pd.concat([st.session_state['df_creditos'], pd.DataFrame([fila_cr])], ignore_index=True)
-                    # Recalcular cartera dinámica automáticamente
                     st.session_state['df_estado_cartera'] = calcular_cartera_dinamica(st.session_state['df_creditos'], st.session_state['df_pagos'], st.session_state['df_estado_cartera'])
                     st.success(f"✅ ¡Crédito `{nuevo_cr_id}` creado y cartera recalculada automáticamente!")
 
