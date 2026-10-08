@@ -208,6 +208,58 @@ def generar_pdf_comprobante(pago_info):
     return bytes(pdf.output())
 
 # ---------------------------------------------------------
+# FUNCIÓN DE ACTUALIZACIÓN AUTOMÁTICA DE MORAS POR FECHA
+# ---------------------------------------------------------
+def actualizar_moras_automatico(df_ec, df_cal):
+    """
+    Compara la fecha actual con la fecha de vencimiento en el calendario.
+    Si la cuota venció y no está pagada completamente, actualiza la deuda vencida
+    y el estado a 'En mora' en Estado_Cartera.
+    """
+    if df_ec.empty or df_cal.empty:
+        return df_ec
+
+    hoy = pd.Timestamp(datetime.today().date())
+
+    for idx, row in df_ec.iterrows():
+        credito_id = row['credito_id']
+        # Si ya está totalmente pagado o en paz y salvo, omitir
+        if row.get('deuda_total_pendiente', 0) <= 0:
+            continue
+
+        # Buscar cuotas en el calendario para este crédito cuya fecha de vencimiento sea anterior a hoy y no estén pagadas
+relevant_cal = df_cal[df_cal['credito_id'] == credito_id]
+        if not relevant_cal.empty:
+            # Buscar columnas posibles de fecha de vencimiento
+            col_fecha = 'fecha_vencimiento' if 'fecha_vencimiento' in relevant_cal.columns else 'fecha_programada'
+            col_estado_cuota = 'estado_cuota' if 'estado_cuota' in relevant_cal.columns else None
+            col_int_pend = 'interes_pendiente' if 'interes_pendiente' in relevant_cal.columns else 'interes_periodo'
+
+            if col_fecha in relevant_cal.columns:
+                # Filtrar cuotas vencidas y pendientes
+                if col_estado_cuota and col_estado_cuota in relevant_cal.columns:
+                    cuotas_vencidas = relevant_cal[
+                        (pd.to_datetime(relevant_cal[col_fecha]) < hoy) & 
+                        (~relevant_cal[col_estado_cuota].astype(str).str.contains('Pagado|Finalizado', case=False, na=False))
+                    ]
+                else:
+                    cuotas_vencidas = relevant_cal[pd.to_datetime(relevant_cal[col_fecha]) < hoy]
+
+                if not cuotas_vencidas.empty:
+                    # Calcular la suma pendiente vencida
+                    vencido_calc = 0
+                    for _, c_row in cuotas_vencidas.iterrows():
+                        int_p = c_row.get('interes_pendiente', c_row.get('interes_periodo', 0))
+                        cap_p = c_row.get('capital_programado', c_row.get('capital_periodo', 0))
+                        vencido_calc += (0 if pd.isna(int_p) else int_p) + (0 if pd.isna(cap_p) else cap_p)
+
+                    df_ec.loc[idx, 'deuda_vencida'] = max(df_ec.loc[idx, 'deuda_vencida'], vencido_calc)
+                    if df_ec.loc[idx, 'deuda_vencida'] > 0:
+                        df_ec.loc[idx, 'estado'] = "En mora"
+
+    return df_ec
+
+# ---------------------------------------------------------
 # CARGA DE DATOS DESDE EL EXCEL
 # ---------------------------------------------------------
 st.sidebar.title("💎 Entre Amigos Capital")
@@ -238,6 +290,9 @@ def load_data_from_file(file_source):
         df_estado_cartera = pd.read_excel(xls, sheet_name='Estado_Cartera') if 'Estado_Cartera' in xls.sheet_names else pd.DataFrame()
         df_resumen = pd.read_excel(xls, sheet_name='Resumen_Cartera') if 'Resumen_Cartera' in xls.sheet_names else pd.DataFrame()
         df_calendario = pd.read_excel(xls, sheet_name='Calendario_Intereses') if 'Calendario_Intereses' in xls.sheet_names else pd.DataFrame()
+
+        # Aplicar actualización automática de moras basada en la fecha actual
+        df_estado_cartera = actualizar_moras_automatico(df_estado_cartera, df_calendario)
 
         return df_clientes, df_creditos, df_pagos, df_estado_cartera, df_resumen, df_calendario
     except Exception as e:
@@ -424,7 +479,7 @@ elif opcion_menu == "👤 Ficha por Cliente":
             tiene_mora = any(cartera_cliente['estado'].astype(str).str.contains('mora', case=False, na=False)) if not cartera_cliente.empty else False
 
             if tiene_mora or deuda_vencida > 0:
-                st.error(f"⚠️ **Alerta Individual - En Mora:** Este cliente presenta cuotas vencidas por un valor total de **${deuda_vencida:,.0f} COP** (Deuda total pendiente: ${deuda_total:,.0f} COP).")
+                st.error(f"⚠️ **Alerta Individual - En Mora:** Este cliente presenta cuotas vencidas por un valor total de **${deuda_vencida:,.0f} COP** (Deuda total pendiente:${deuda_total:,.0f} COP).")
             elif deuda_total == 0:
                 st.success("🟢 **Paz y Salvo:** El cliente no presenta saldos pendientes.")
             else:
@@ -524,7 +579,7 @@ elif opcion_menu == "➕ Nuevos Registros":
                 with col_np1:
                     capital_inicial = st.number_input("Capital Inicial del Préstamo (COP):", min_value=100000, value=1000000, step=50000, format="%d")
                     tasa_interes_mensual = st.number_input("Tasa de Interés Mensual (%):", min_value=0.0, value=3.0, step=0.5) / 100.0
-                    plazo_meses = st.number_input("Plazo en Meses (Dejar vacío o 0 si es interés periódico indefinido, o colocar número de periodos):", min_value=0, value=6, step=1)
+                    plazo_meses = st.number_input("Plazo en Meses:", min_value=0, value=6, step=1)
                 with col_np2:
                     fecha_desembolso = st.date_input("Fecha de Desembolso:", datetime.today())
                     modalidad_cred = st.selectbox("Modalidad de Pago:", ["INTERES_MENSUAL", "Cuotas fijas (Capital + Interés)"])
@@ -539,7 +594,6 @@ elif opcion_menu == "➕ Nuevos Registros":
 
                     plazo_val = int(plazo_meses) if plazo_meses > 0 else 12
 
-                    # Sincronización Hoja Creditos (coincidiendo con columnas del Excel original)
                     nueva_fila_credito = {
                         'credito_id': proximo_cred_id,
                         'cliente_id': id_cli_sel,
@@ -559,7 +613,6 @@ elif opcion_menu == "➕ Nuevos Registros":
                     }
                     st.session_state['df_creditos'] = pd.concat([st.session_state['df_creditos'], pd.DataFrame([nueva_fila_credito])], ignore_index=True)
 
-                    # Sincronización Hoja Estado_Cartera
                     interes_inicial_est = capital_inicial * tasa_interes_mensual
                     nueva_fila_ec = {
                         'credito_id': proximo_cred_id,
@@ -575,7 +628,6 @@ elif opcion_menu == "➕ Nuevos Registros":
                     }
                     st.session_state['df_estado_cartera'] = pd.concat([st.session_state['df_estado_cartera'], pd.DataFrame([nueva_fila_ec])], ignore_index=True)
 
-                    # Sincronización Hoja Calendario_Intereses
                     nuevas_filas_cal = []
                     for i in range(1, plazo_val + 1):
                         fecha_venc = pd.to_datetime(fecha_desembolso) + relativedelta(months=i)
@@ -691,7 +743,6 @@ elif opcion_menu == "📝 Registrar Pago":
 
                 st.session_state['df_pagos'] = pd.concat([st.session_state['df_pagos'], pd.DataFrame([nueva_fila_pago])], ignore_index=True)
 
-                # Actualizar Créditos (saldo_capital)
                 idx_cred = st.session_state['df_creditos'].index[st.session_state['df_creditos']['credito_id'] == credito_id_pago].tolist()
                 if idx_cred:
                     ic = idx_cred[0]
@@ -701,7 +752,6 @@ elif opcion_menu == "📝 Registrar Pago":
                     if nuevo_saldo_cap == 0:
                         st.session_state['df_creditos'].loc[ic, 'estado_credito'] = "Finalizado"
 
-                # Actualizar Calendario de Intereses
                 if not st.session_state['df_calendario'].empty and pago_interes > 0:
                     remanente_int = pago_interes
                     filas_cal = st.session_state['df_calendario'][st.session_state['df_calendario']['credito_id'] == credito_id_pago].index.tolist()
@@ -717,7 +767,6 @@ elif opcion_menu == "📝 Registrar Pago":
                                 st.session_state['df_calendario'].loc[idx_c, 'estado_cuota'] = 'Pagado'
                             remanente_int -= abono
 
-                # Actualizar Estado_Cartera
                 nuevo_cap_pend = 0
                 nuevo_int_pend = 0
                 nueva_deuda_total = 0
