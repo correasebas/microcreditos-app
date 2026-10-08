@@ -6,8 +6,6 @@ import io
 import urllib.parse
 from fpdf import FPDF
 import os
-from dateutil.relativedelta import relativedelta
-from groq import Groq
 
 # ---------------------------------------------------------
 # 0. CONFIGURACIÓN NATIVA DE STREAMLIT (config.toml)
@@ -203,166 +201,26 @@ def generar_pdf_comprobante(pago_info):
     return bytes(pdf.output())
 
 # ---------------------------------------------------------
-# MOTOR DE RECÁLCULO DINÁMICO ROBUSTO (INTERÉS VS CUOTA FIJA)
+# CARGA DE DATOS RIGUROSA RESPETANDO EL EXCEL ORIGINAL
 # ---------------------------------------------------------
-def recalcular_cartera_dinamica(df_creditos, df_pagos, fecha_corte=datetime.today()):
-    estados_list = []
-    calendario_list = []
-    
-    if df_creditos.empty:
-        return pd.DataFrame(), pd.DataFrame()
-        
-    for _, cred in df_creditos.iterrows():
-        cred_id = cred['credito_id']
-        cli_id = cred['cliente_id']
-        cap_inicial = float(cred['capital_inicial'])
-        modalidad = str(cred['modalidad']).strip()
-        fecha_desemb = pd.to_datetime(cred['fecha_desembolso'])
-        tasa = float(cred['tasa_mensual']) if pd.notnull(cred['tasa_mensual']) and cred['tasa_mensual'] > 0 else 0.03
-        
-        pagos_cred = df_pagos[df_pagos['credito_id'] == cred_id] if not df_pagos.empty else pd.DataFrame()
-        
-        cap_pagado = pagos_cred['pago_capital'].sum() if not pagos_cred.empty and 'pago_capital' in pagos_cred.columns else 0
-        int_pagado_total = pagos_cred['pago_interes'].sum() if not pagos_cred.empty and 'pago_interes' in pagos_cred.columns else 0
-        
-        cap_pendiente = max(0.0, cap_inicial - cap_pagado)
-        
-        # Lógica según modalidad
-        if "CUOTA_FIJA" in modalidad.upper() or "CUOTAS FIJAS" in modalidad.upper():
-            # Para cuotas fijas, los pagos traen su desglose exacto de capital e intereses registrado en Pagos.
-            # El saldo pendiente de capital se calcula restando el capital pagado.
-            # Los intereses pendientes se evalúan contra los intereses teóricos o programados acumulados menos lo pagado.
-            plazo = int(cred['plazo_meses']) if pd.notnull(cred['plazo_meses']) and cred['plazo_meses'] > 0 else 12
-            
-            # Generar cuotas fijas teóricas
-            current_date = fecha_desemb + relativedelta(months=1)
-            total_int_teorico = 0
-            expected_periods = []
-            for p_idx in range(1, plazo + 1):
-                int_teo = cap_pendiente * tasa # aproximado sobre saldo o inicial
-                expected_periods.append({
-                    'periodo': p_idx,
-                    'fecha_vencimiento': current_date,
-                    'interes_teorico': int_teo
-                })
-                total_int_teorico += int_teo
-                current_date += relativedelta(months=1)
-                
-            int_pendiente = max(0.0, total_int_teorico - int_pagado_total)
-            deuda_total = cap_pendiente + int_pendiente
-            
-            # Determinar mora para cuota fija
-            deuda_vencida = 0.0
-            remanente_int = int_pagado_total
-            for p in expected_periods:
-                if remanente_int >= p['interes_teorico']:
-                    remanente_int -= p['interes_teorico']
-                    int_faltante = 0
-                else:
-                    int_faltante = p['interes_teorico'] - remanente_int
-                    remanente_int = 0
-                if p['fecha_vencimiento'] <= fecha_corte:
-                    deuda_vencida += int_faltante
-                    
-            fecha_fin = fecha_desemb + relativedelta(months=plazo)
-            if fecha_fin <= fecha_corte and cap_pendiente > 0:
-                deuda_vencida += cap_pendiente
-                
-        else:
-            # INTERES_MENSUAL tradicional
-            current_date = fecha_desemb + relativedelta(months=1)
-            periodo = 1
-            expected_periods = []
-            while current_date <= fecha_corte + relativedelta(days=15):
-                expected_periods.append({
-                    'periodo': periodo,
-                    'fecha_vencimiento': current_date,
-                    'interes_teorico': cap_inicial * tasa
-                })
-                current_date = current_date + relativedelta(months=1)
-                periodo += 1
-                if periodo > 120:
-                    break
-                    
-            if not expected_periods:
-                expected_periods.append({
-                    'periodo': 1,
-                    'fecha_vencimiento': fecha_desemb + relativedelta(months=1),
-                    'interes_teorico': cap_inicial * tasa
-                })
-                
-            total_interes_teorico = sum([p['interes_teorico'] for p in expected_periods])
-            int_pendiente = max(0.0, total_interes_teorico - int_pagado_total)
-            deuda_total = cap_pendiente + int_pendiente
-            
-            remanente_pagos_int = int_pagado_total
-            deuda_vencida = 0.0
-            for p in expected_periods:
-                int_req = p['interes_teorico']
-                if remanente_pagos_int >= int_req:
-                    remanente_pagos_int -= int_req
-                    int_en_este_periodo = 0
-                else:
-                    int_en_este_periodo = int_req - remanente_pagos_int
-                    remanente_pagos_int = 0
-                if p['fecha_vencimiento'] <= fecha_corte:
-                    deuda_vencida += int_en_este_periodo
-
-        # Estado final del crédito
-        if deuda_total <= 1:
-            estado = "Paz y salvo"
-        elif deuda_vencida > 1:
-            estado = "En mora"
-        else:
-            estado = "Al día"
-            
-        estados_list.append({
-            'credito_id': cred_id,
-            'cliente_id': cli_id,
-            'tipo_interes': modalidad,
-            'capital_inicial': cap_inicial,
-            'capital_pagado': cap_pagado,
-            'capital_pendiente': cap_pendiente,
-            'interes_pendiente': int_pendiente,
-            'deuda_total_pendiente': deuda_total,
-            'deuda_vencida': deuda_vencida,
-            'estado': estado
-        })
-        
-        # Calendario
-        remanente_cal = int_pagado_total
-        for p in expected_periods:
-            int_req = p['interes_teorico']
-            pagado_p = min(remanente_cal, int_req)
-            remanente_cal -= pagado_p
-            pend_p = int_req - pagado_p
-            est_cuota = "Pagado" if pend_p <= 1 and p['fecha_vencimiento'] <= fecha_corte else ("Pendiente" if p['fecha_vencimiento'] > fecha_corte else "Vencido")
-            
-            calendario_list.append({
-                'credito_id': cred_id,
-                'periodo': p['periodo'],
-                'fecha_vencimiento': p['fecha_vencimiento'],
-                'capital_periodo': 0,
-                'interes_periodo': int_req,
-                'interes_pagado': pagado_p,
-                'interes_pendiente': pend_p,
-                'estado_cuota': est_cuota
-            })
-
-    return pd.DataFrame(estados_list), pd.DataFrame(calendario_list)
+def cargar_datos_excel(file_source):
+    try:
+        xls = pd.ExcelFile(file_source)
+        df_clientes = pd.read_excel(xls, sheet_name='Clientes')
+        df_creditos = pd.read_excel(xls, sheet_name='Creditos')
+        df_pagos = pd.read_excel(xls, sheet_name='Pagos')
+        df_est = pd.read_excel(xls, sheet_name='Estado_Cartera') if 'Estado_Cartera' in xls.sheet_names else pd.DataFrame()
+        df_cal = pd.read_excel(xls, sheet_name='Calendario_Intereses') if 'Calendario_Intereses' in xls.sheet_names else pd.DataFrame()
+        return df_clientes, df_creditos, df_pagos, df_est, df_cal
+    except Exception as e:
+        st.error(f"Error al cargar el archivo de Excel: {e}")
+        return None, None, None, None, None
 
 # ---------------------------------------------------------
-# CARGA DE DATOS DESDE EL EXCEL
+# CARGA INICIAL DESDE EL EXCEL
 # ---------------------------------------------------------
 st.sidebar.title("💎 Entre Amigos Capital")
 st.sidebar.caption("Fondo de Inversión y Microcréditos Familiares")
-
-with st.sidebar.expander("📌 Nuestra Misión", expanded=False):
-    st.write(
-        "Fomentar el desarrollo económico y la colaboración financiera "
-        "dentro de nuestro círculo de confianza, ofreciendo liquidez ágil, "
-        "tasas justas y transparencia absoluta en cada operación."
-    )
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("📂 Base de Datos Excel")
@@ -372,38 +230,25 @@ uploaded_file = st.sidebar.file_uploader(
     help="Si no subes un archivo, se cargará el archivo base por defecto."
 )
 
-@st.cache_data(show_spinner=False)
-def load_data_from_file(file_source):
-    try:
-        xls = pd.ExcelFile(file_source)
-        df_clientes = pd.read_excel(xls, sheet_name='Clientes')
-        df_creditos = pd.read_excel(xls, sheet_name='Creditos')
-        df_pagos = pd.read_excel(xls, sheet_name='Pagos')
-        return df_clientes, df_creditos, df_pagos
-    except Exception as e:
-        st.error(f"Error al cargar el archivo de Excel: {e}")
-        return None, None, None
-
 file_to_load = uploaded_file if uploaded_file is not None else EXCEL_FILE_DEFAULT
 
 if 'current_loaded_file' not in st.session_state or st.session_state['current_loaded_file'] != file_to_load:
-    df_c, df_cr, df_p = load_data_from_file(file_to_load)
+    df_c, df_cr, df_p, df_est, df_cal = cargar_datos_excel(file_to_load)
     st.session_state['df_clientes'] = df_c if df_c is not None else pd.DataFrame()
     st.session_state['df_creditos'] = df_cr if df_cr is not None else pd.DataFrame()
     st.session_state['df_pagos'] = df_p if df_p is not None else pd.DataFrame()
+    st.session_state['df_estado_cartera'] = df_est if df_est is not None else pd.DataFrame()
+    st.session_state['df_calendario'] = df_cal if df_cal is not None else pd.DataFrame()
     st.session_state['current_loaded_file'] = file_to_load
 
-for key, default_val in [('df_clientes', pd.DataFrame()), ('df_creditos', pd.DataFrame()), ('df_pagos', pd.DataFrame())]:
+for key, default_val in [('df_clientes', pd.DataFrame()), ('df_creditos', pd.DataFrame()), ('df_pagos', pd.DataFrame()), ('df_estado_cartera', pd.DataFrame())]:
     if key not in st.session_state:
         st.session_state[key] = default_val
 
 df_clientes = st.session_state['df_clientes']
 df_creditos = st.session_state['df_creditos']
 df_pagos = st.session_state['df_pagos']
-
-df_estado_cartera, df_calendario = recalcular_cartera_dinamica(df_creditos, df_pagos, datetime.today())
-st.session_state['df_estado_cartera'] = df_estado_cartera
-st.session_state['df_calendario'] = df_calendario
+df_estado_cartera = st.session_state['df_estado_cartera']
 
 st.sidebar.markdown("---")
 opcion_menu = st.sidebar.radio(
@@ -412,12 +257,12 @@ opcion_menu = st.sidebar.radio(
 )
 
 def obtener_resumen_general():
-    df_cr = st.session_state.get('df_creditos', pd.DataFrame())
     df_ec = st.session_state.get('df_estado_cartera', pd.DataFrame())
-    if df_cr.empty or df_ec.empty:
+    df_cr = st.session_state.get('df_creditos', pd.DataFrame())
+    if df_ec.empty:
         return pd.DataFrame()
     
-    cap_prestado = df_cr['capital_inicial'].sum()
+    cap_prestado = df_cr['capital_inicial'].sum() if not df_cr.empty else df_ec['capital_inicial'].sum()
     cap_pagado = df_ec['capital_pagado'].sum() if 'capital_pagado' in df_ec.columns else 0
     cap_pendiente = df_ec['capital_pendiente'].sum() if 'capital_pendiente' in df_ec.columns else 0
     int_pendiente = df_ec['interes_pendiente'].sum() if 'interes_pendiente' in df_ec.columns else 0
@@ -426,7 +271,7 @@ def obtener_resumen_general():
     
     creditos_activos = len(df_ec[df_ec['deuda_total_pendiente'] > 1])
     creditos_mora = len(df_ec[df_ec['estado'].astype(str).str.contains('mora', case=False, na=False)])
-    creditos_aldia = len(df_ec[(df_ec['estado'].astype(str).str.contains('día|salvo', case=False, na=False)) & (df_ec['deuda_total_pendiente'] >= 0)])
+    creditos_aldia = len(df_ec[df_ec['estado'].astype(str).str.contains('día|salvo', case=False, na=False)])
 
     return pd.DataFrame({
         'Indicador': ['Capital total prestado', 'Capital pagado', 'Capital pendiente', 'Intereses pendientes', 'Deuda total pendiente', 'Deuda vencida', 'Créditos activos', 'Créditos en mora', 'Créditos al día'],
@@ -436,14 +281,12 @@ def obtener_resumen_general():
 def exportar_excel_completo():
     output = io.BytesIO()
     df_resumen_actualizado = obtener_resumen_general()
-    df_ec_exp, df_cal_exp = recalcular_cartera_dinamica(st.session_state['df_creditos'], st.session_state['df_pagos'], datetime.today())
-    
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         if not st.session_state['df_clientes'].empty: st.session_state['df_clientes'].to_excel(writer, sheet_name='Clientes', index=False)
         if not st.session_state['df_creditos'].empty: st.session_state['df_creditos'].to_excel(writer, sheet_name='Creditos', index=False)
         if not st.session_state['df_pagos'].empty: st.session_state['df_pagos'].to_excel(writer, sheet_name='Pagos', index=False)
-        if not df_ec_exp.empty: df_ec_exp.to_excel(writer, sheet_name='Estado_Cartera', index=False)
-        if not df_cal_exp.empty: df_cal_exp.to_excel(writer, sheet_name='Calendario_Intereses', index=False)
+        if not st.session_state['df_estado_cartera'].empty: st.session_state['df_estado_cartera'].to_excel(writer, sheet_name='Estado_Cartera', index=False)
+        if not st.session_state['df_calendario'].empty: st.session_state['df_calendario'].to_excel(writer, sheet_name='Calendario_Intereses', index=False)
         if not df_resumen_actualizado.empty: df_resumen_actualizado.to_excel(writer, sheet_name='Resumen_Cartera', index=False)
     return output.getvalue()
 
@@ -478,9 +321,9 @@ if opcion_menu == "📊 Dashboard General":
         fig_pie.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#E6EDF3", legend=dict(font=dict(color="#E6EDF3")))
         st.plotly_chart(fig_pie, use_container_width=True)
     with col_right:
-        st.subheader("Detalle de Créditos Registrados")
-        if not st.session_state['df_creditos'].empty:
-            st.dataframe(st.session_state['df_creditos'], use_container_width=True)
+        st.subheader("Estado Oficial de Cartera")
+        if not st.session_state['df_estado_cartera'].empty:
+            st.dataframe(st.session_state['df_estado_cartera'], use_container_width=True)
 
 # =========================================================
 # 2. FICHA POR CLIENTE
@@ -627,18 +470,14 @@ elif opcion_menu == "📝 Registrar Pago":
                 nueva_p = {'pago_id': pago_id, 'credito_id': credito_id, 'cliente_id': info_cli_pago['cliente_id'], 'fecha_pago': pd.to_datetime(fecha_pago), 'medio_pago': medio, 'valor_pago': valor, 'pago_interes': p_int, 'pago_capital': p_cap, 'concepto': concepto, 'observaciones': obs}
                 st.session_state['df_pagos'] = pd.concat([st.session_state['df_pagos'], pd.DataFrame([nueva_p])], ignore_index=True)
                 
-                df_ec_act, df_cal_act = recalcular_cartera_dinamica(st.session_state['df_creditos'], st.session_state['df_pagos'], datetime.today())
-                st.session_state['df_estado_cartera'] = df_ec_act
-                st.session_state['df_calendario'] = df_cal_act
-                
-                row_act = df_ec_act[df_ec_act['credito_id'] == credito_id].iloc[0]
+                row_act = st.session_state['df_estado_cartera'][st.session_state['df_estado_cartera']['credito_id'] == credito_id].iloc[0] if not st.session_state['df_estado_cartera'].empty else {}
                 st.success("✅ ¡Pago registrado con éxito!")
                 
                 pdf_bytes = generar_pdf_comprobante({
                     'pago_id': pago_id, 'cliente_id': info_cli_pago['cliente_id'], 'cliente_nombre': cliente_pago, 'credito_id': credito_id,
                     'fecha_pago': fecha_pago.strftime('%Y-%m-%d'), 'medio_pago': medio, 'concepto': concepto, 'pago_interes': p_int,
-                    'pago_capital': p_cap, 'valor_pago': valor, 'nuevo_cap_pend': row_act['capital_pendiente'], 'nuevo_int_pend': row_act['interes_pendiente'],
-                    'nueva_deuda_total': row_act['deuda_total_pendiente'], 'nuevo_estado': row_act['estado'], 'observaciones': obs
+                    'pago_capital': p_cap, 'valor_pago': valor, 'nuevo_cap_pend': row_act.get('capital_pendiente', 0), 'nuevo_int_pend': row_act.get('interes_pendiente', 0),
+                    'nueva_deuda_total': row_act.get('deuda_total_pendiente', 0), 'nuevo_estado': row_act.get('estado', 'Al día'), 'observaciones': obs
                 })
                 st.download_button("📥 Descargar Comprobante PDF", data=pdf_bytes, file_name=f"Comprobante_{pago_id}.pdf", mime="application/pdf", use_container_width=True)
 
