@@ -272,6 +272,25 @@ for key, default_val in [
 # ---------------------------------------------------------
 TOLERANCIA_COP = 1000  # diferencias menores (redondeos) no cuentan como mora
 
+def calcular_cuota_fija(capital, tasa_mensual, n_cuotas):
+    """
+    Cuotas fijas (capital + interés):
+      interés total = capital × tasa mensual × número de meses
+      capital por cuota = capital / n      interés por cuota = interés total / n
+      cuota = capital por cuota + interés por cuota
+    """
+    n = max(int(n_cuotas), 1)
+    interes_total = capital * tasa_mensual * n
+    capital_cuota = capital / n
+    interes_cuota = interes_total / n
+    return {
+        'capital_cuota': capital_cuota,
+        'interes_cuota': interes_cuota,
+        'cuota': capital_cuota + interes_cuota,
+        'interes_total': interes_total,
+        'total_pagar': capital + interes_total,
+    }
+
 def hoy_colombia():
     """Fecha de hoy en Colombia (evita desfases si el servidor está en UTC)."""
     return pd.Timestamp(datetime.now(ZoneInfo("America/Bogota")).date())
@@ -303,8 +322,8 @@ def calcular_mora_credito(cred, pagos_cred, hoy, dias_gracia=0):
     if es_fija:
         n = int(_num(cred.get('numero_cuotas'), 0)) or plazo
         cuota = _num(cred.get('valor_cuota'))
-        if cuota <= 0 and n > 0:  # cuota fija sin valor guardado: fórmula francesa
-            cuota = capital * tasa / (1 - (1 + tasa) ** (-n)) if tasa > 0 else capital / n
+        if cuota <= 0 and n > 0:  # cuota fija sin valor guardado: capital/n + interés total/n
+            cuota = calcular_cuota_fija(capital, tasa, n)['cuota']
         for i in range(1, n + 1):
             f = f0 + relativedelta(months=i)
             if f + gracia < hoy:
@@ -681,7 +700,7 @@ elif opcion_menu == "➕ Nuevos Registros":
                         'plazo_meses': plazo_val,
                         'dia_pago': pd.to_datetime(fecha_desembolso).day,
                         'numero_cuotas': plazo_val,
-                        'valor_cuota': capital_inicial * tasa_interes_mensual if modalidad_cred == "INTERES_MENSUAL" else 0,
+                        'valor_cuota': capital_inicial * tasa_interes_mensual if modalidad_cred == "INTERES_MENSUAL" else round(calcular_cuota_fija(capital_inicial, tasa_interes_mensual, plazo_val)['cuota']),
                         'saldo_capital': capital_inicial,
                         'estado_credito': 'Al día',
                         'fecha_final_estimada': pd.to_datetime(fecha_desembolso) + relativedelta(months=plazo_val),
@@ -691,7 +710,10 @@ elif opcion_menu == "➕ Nuevos Registros":
                     st.session_state['df_creditos'] = pd.concat([st.session_state['df_creditos'], pd.DataFrame([nueva_fila_credito])], ignore_index=True)
 
                     # Sincronización Hoja Estado_Cartera
-                    interes_inicial_est = capital_inicial * tasa_interes_mensual
+                    if modalidad_cred == "INTERES_MENSUAL":
+                        interes_inicial_est = capital_inicial * tasa_interes_mensual
+                    else:  # cuotas fijas: todo el interés del plazo
+                        interes_inicial_est = calcular_cuota_fija(capital_inicial, tasa_interes_mensual, plazo_val)['interes_total']
                     nueva_fila_ec = {
                         'credito_id': proximo_cred_id,
                         'cliente_id': id_cli_sel,
@@ -710,8 +732,13 @@ elif opcion_menu == "➕ Nuevos Registros":
                     nuevas_filas_cal = []
                     for i in range(1, plazo_val + 1):
                         fecha_venc = pd.to_datetime(fecha_desembolso) + relativedelta(months=i)
-                        interes_per = capital_inicial * tasa_interes_mensual
-                        cap_per = capital_inicial if i == plazo_val and modalidad_cred != "INTERES_MENSUAL" else 0
+                        if modalidad_cred == "INTERES_MENSUAL":
+                            interes_per = capital_inicial * tasa_interes_mensual
+                            cap_per = 0
+                        else:  # cuotas fijas: capital e interés en partes iguales
+                            cf = calcular_cuota_fija(capital_inicial, tasa_interes_mensual, plazo_val)
+                            interes_per = cf['interes_cuota']
+                            cap_per = cf['capital_cuota']
 
                         nuevas_filas_cal.append({
                             'credito_id': proximo_cred_id,
@@ -998,13 +1025,19 @@ elif opcion_menu == "🧮 Simulador de Créditos":
             interes_mensual = monto_sim * tasa_mensual
             total_intereses = interes_mensual * plazo_sim
             total_pagar = monto_sim + total_intereses
-            st.write(f"• **Pago mensual de intereses:** ${interes_mensual:,.0f} COP")
+            m1, m2 = st.columns(2)
+            m1.metric("Valor de la cuota (interés mensual)", f"${interes_mensual:,.0f} COP")
+            m2.metric(f"Intereses a pagar en {plazo_sim} meses", f"${total_intereses:,.0f} COP")
             st.write(f"• **Pago final de capital (Mes {plazo_sim}):** ${monto_sim:,.0f} COP")
             st.metric("Total General a Cancelar", f"${total_pagar:,.0f} COP")
         else:
-            cuota_mensual = (monto_sim * tasa_mensual) / (1 - (1 + tasa_mensual)**(-plazo_sim))
-            total_pagar = cuota_mensual * plazo_sim
-            st.metric("Cuota Fija Mensual", f"${cuota_mensual:,.0f} COP")
+            cf = calcular_cuota_fija(monto_sim, tasa_mensual, plazo_sim)
+            m1, m2 = st.columns(2)
+            m1.metric("Valor de la cuota", f"${cf['cuota']:,.0f} COP")
+            m2.metric(f"Intereses a pagar en {plazo_sim} meses", f"${cf['interes_total']:,.0f} COP")
+            st.write(f"• **Capital por cuota:** ${cf['capital_cuota']:,.0f} COP")
+            st.write(f"• **Interés por cuota:** ${cf['interes_cuota']:,.0f} COP")
+            st.metric("Total General a Cancelar", f"${cf['total_pagar']:,.0f} COP")
 
 # =========================================================
 # 7. ASISTENTE IA (GROQ)
