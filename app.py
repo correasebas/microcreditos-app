@@ -307,6 +307,35 @@ def hoy_colombia():
 def _num(v, default=0.0):
     return default if pd.isna(v) else float(v)
 
+def interes_sugerido_pago(cred, fila_ec):
+    """
+    Interés que corresponde en un pago, según la modalidad del crédito:
+      - INTERES_MENSUAL: tasa × saldo de capital vigente (baja a medida que se abona capital),
+        por cada cuota vencida (mínimo 1), sin superar el interés pendiente si existe.
+      - Cuotas fijas: interés por cuota (interés total del plazo / número de cuotas),
+        sin superar el interés pendiente.
+    Devuelve (interes, texto_explicativo).
+    """
+    tasa = _num(cred.get('tasa_mensual'), 0.0) or _num(cred.get('tasa_interes'), 0.03)
+    capital = _num(cred.get('capital_inicial'))
+    saldo = _num(cred.get('saldo_capital'), capital)
+    int_pend = _num(fila_ec.get('interes_pendiente')) if fila_ec is not None else 0.0
+
+    if 'CUOTA' in str(cred.get('modalidad', '')).upper():
+        n = int(_num(cred.get('numero_cuotas'), 0)) or int(_num(cred.get('plazo_meses'), 0))
+        interes = calcular_cuota_fija(capital, tasa, n)['interes_cuota'] if n > 0 else 0.0
+        if int_pend > 0:
+            interes = min(interes, int_pend)
+        texto = f"Cuotas fijas: interés por cuota = ${interes:,.0f} (interés total del plazo ÷ {n} cuotas)."
+    else:
+        cuotas = max(1, int(_num(fila_ec.get('cuotas_vencidas'), 0))) if fila_ec is not None else 1
+        interes = saldo * tasa * cuotas
+        if int_pend > 0:
+            interes = min(interes, int_pend)
+        texto = (f"Interés mensual = {tasa*100:.1f}% sobre el capital pendiente de ${saldo:,.0f}"
+                 f" ({cuotas} cuota(s)) = ${interes:,.0f}.")
+    return int(round(interes)), texto
+
 def calcular_mora_credito(cred, pagos_cred, hoy, dias_gracia=0):
     """
     Calcula la mora de un crédito comparando lo que YA debió pagarse
@@ -822,7 +851,12 @@ elif opcion_menu == "📝 Registrar Pago":
                 pago_interes = 0
                 pago_capital = valor_pago
             else:
-                pago_interes = st.number_input("Monto destinado a Intereses:", min_value=0, max_value=int(valor_pago), value=int(valor_pago*0.3))
+                cred_pago = creditos_cli[creditos_cli['credito_id'] == credito_id_pago].iloc[0]
+                ec_pago = df_estado_cartera[df_estado_cartera['credito_id'] == credito_id_pago] if not df_estado_cartera.empty else pd.DataFrame()
+                fila_ec_pago = ec_pago.iloc[0] if not ec_pago.empty else None
+                interes_sug, texto_int = interes_sugerido_pago(cred_pago, fila_ec_pago)
+                pago_interes = st.number_input("Monto destinado a Intereses:", min_value=0, max_value=int(valor_pago), value=min(int(valor_pago), interes_sug))
+                st.caption(f"💡 {texto_int} El resto del pago se abona a capital.")
                 pago_capital = valor_pago - pago_interes
 
             observaciones = st.text_input("Observaciones (opcional):", value="")
