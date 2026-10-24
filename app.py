@@ -300,6 +300,13 @@ def calcular_cuota_fija(capital, tasa_mensual, n_cuotas):
         'cronograma': cronograma,
     }
 
+def hoy_colombia():
+    """Fecha de hoy en Colombia (evita desfases si el servidor está en UTC)."""
+    return pd.Timestamp(datetime.now(ZoneInfo("America/Bogota")).date())
+
+def _num(v, default=0.0):
+    return default if pd.isna(v) else float(v)
+
 def calcular_mora_credito(cred, pagos_cred, hoy, dias_gracia=0):
     """
     Calcula la mora de un crédito comparando lo que YA debió pagarse
