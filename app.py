@@ -275,13 +275,21 @@ TOLERANCIA_COP = 1000  # diferencias menores (redondeos) no cuentan como mora
 def calcular_cuota_fija(capital, tasa_mensual, n_cuotas):
     """
     Cuotas fijas (capital + interés):
-      interés total = capital × tasa mensual × número de meses
-      capital por cuota = capital / n      interés por cuota = interés total / n
+      capital por cuota = capital / n
+      interés de cada mes = tasa × saldo de capital de ese mes (el saldo baja cada cuota)
+      interés total = suma de los intereses mensuales
+      interés por cuota = interés total / n   (se reparte por igual, como el capital)
       cuota = capital por cuota + interés por cuota
     """
     n = max(int(n_cuotas), 1)
-    interes_total = capital * tasa_mensual * n
     capital_cuota = capital / n
+    cronograma = []
+    interes_total = 0.0
+    for k in range(1, n + 1):
+        saldo = capital - capital_cuota * (k - 1)
+        interes_mes = saldo * tasa_mensual
+        interes_total += interes_mes
+        cronograma.append((k, saldo, interes_mes))
     interes_cuota = interes_total / n
     return {
         'capital_cuota': capital_cuota,
@@ -289,14 +297,8 @@ def calcular_cuota_fija(capital, tasa_mensual, n_cuotas):
         'cuota': capital_cuota + interes_cuota,
         'interes_total': interes_total,
         'total_pagar': capital + interes_total,
+        'cronograma': cronograma,
     }
-
-def hoy_colombia():
-    """Fecha de hoy en Colombia (evita desfases si el servidor está en UTC)."""
-    return pd.Timestamp(datetime.now(ZoneInfo("America/Bogota")).date())
-
-def _num(v, default=0.0):
-    return default if pd.isna(v) else float(v)
 
 def calcular_mora_credito(cred, pagos_cred, hoy, dias_gracia=0):
     """
@@ -1038,6 +1040,31 @@ elif opcion_menu == "🧮 Simulador de Créditos":
             st.write(f"• **Capital por cuota:** ${cf['capital_cuota']:,.0f} COP")
             st.write(f"• **Interés por cuota:** ${cf['interes_cuota']:,.0f} COP")
             st.metric("Total General a Cancelar", f"${cf['total_pagar']:,.0f} COP")
+
+    if modalidad_sim == "Cuotas fijas":
+        st.markdown("---")
+        st.subheader("📅 Detalle de Cuotas")
+        filas = [{
+            "Cuota": k,
+            "Capital": cf['capital_cuota'],
+            "Saldo de capital": saldo,
+            "Interés sobre saldo": int_mes,
+            "Interés por cuota (promedio)": cf['interes_cuota'],
+            "Valor cuota": cf['cuota'],
+        } for k, saldo, int_mes in cf['cronograma']]
+        df_sim = pd.DataFrame(filas)
+        total_row = pd.DataFrame([{
+            "Cuota": "TOTAL",
+            "Capital": monto_sim,
+            "Saldo de capital": None,
+            "Interés sobre saldo": cf['interes_total'],
+            "Interés por cuota (promedio)": cf['interes_total'],
+            "Valor cuota": cf['total_pagar'],
+        }])
+        df_sim = pd.concat([df_sim, total_row], ignore_index=True)
+        st.dataframe(
+            df_sim.style.format({c: "${:,.0f}" for c in df_sim.columns if c != "Cuota"}, na_rep=""),
+            use_container_width=True, hide_index=True)
 
 # =========================================================
 # 7. ASISTENTE IA (GROQ)
