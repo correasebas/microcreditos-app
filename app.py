@@ -307,13 +307,13 @@ def hoy_colombia():
 def _num(v, default=0.0):
     return default if pd.isna(v) else float(v)
 
-def interes_sugerido_pago(cred, fila_ec):
+def interes_sugerido_pago(cred, fila_ec, pagos_cred=None):
     """
     Interés que corresponde en un pago, según la modalidad del crédito:
       - INTERES_MENSUAL: tasa × saldo de capital vigente (baja a medida que se abona capital),
         por cada cuota vencida (mínimo 1), sin superar el interés pendiente si existe.
       - Cuotas fijas: interés por cuota (interés total del plazo / número de cuotas),
-        sin superar el interés pendiente.
+        sin superar lo que falta por pagar del interés total del plazo.
     Devuelve (interes, texto_explicativo).
     """
     tasa = _num(cred.get('tasa_mensual'), 0.0) or _num(cred.get('tasa_interes'), 0.03)
@@ -323,10 +323,13 @@ def interes_sugerido_pago(cred, fila_ec):
 
     if 'CUOTA' in str(cred.get('modalidad', '')).upper():
         n = int(_num(cred.get('numero_cuotas'), 0)) or int(_num(cred.get('plazo_meses'), 0))
-        interes = calcular_cuota_fija(capital, tasa, n)['interes_cuota'] if n > 0 else 0.0
-        if int_pend > 0:
-            interes = min(interes, int_pend)
-        texto = f"Cuotas fijas: interés por cuota = ${interes:,.0f} (interés total del plazo ÷ {n} cuotas)."
+        cf = calcular_cuota_fija(capital, tasa, n) if n > 0 else None
+        interes = cf['interes_cuota'] if cf else 0.0
+        if cf and pagos_cred is not None and not pagos_cred.empty:
+            ya_pagado = pagos_cred['pago_interes'].fillna(0).sum()
+            interes = min(interes, max(0.0, cf['interes_total'] - ya_pagado))
+        texto = (f"Cuotas fijas: interés por cuota = ${interes:,.0f}"
+                 f" (interés total del plazo ${cf['interes_total'] if cf else 0:,.0f} ÷ {n} cuotas).")
     else:
         cuotas = max(1, int(_num(fila_ec.get('cuotas_vencidas'), 0))) if fila_ec is not None else 1
         interes = saldo * tasa * cuotas
@@ -429,6 +432,15 @@ def aplicar_mora_automatica(dias_gracia=0, hoy=None):
         if 'CUOTA' not in str(cred.get('modalidad', '')).upper():
             df_ec.loc[ie, 'interes_pendiente'] = res['deuda_vencida']
             df_ec.loc[ie, 'deuda_total_pendiente'] = _num(df_ec.loc[ie, 'capital_pendiente']) + _num(df_ec.loc[ie, 'interes_pendiente'])
+        else:
+            # Cuotas fijas: interés pendiente = interés total del plazo - interés ya pagado
+            n_cf = int(_num(cred.get('numero_cuotas'), 0)) or int(_num(cred.get('plazo_meses'), 0))
+            if n_cf > 0:
+                tasa_cf = _num(cred.get('tasa_mensual'), 0.0) or _num(cred.get('tasa_interes'), 0.03)
+                int_total_cf = calcular_cuota_fija(_num(cred.get('capital_inicial')), tasa_cf, n_cf)['interes_total']
+                pagado_int_cf = df_p.loc[df_p['credito_id'] == cid, 'pago_interes'].fillna(0).sum()
+                df_ec.loc[ie, 'interes_pendiente'] = round(max(0.0, int_total_cf - pagado_int_cf))
+                df_ec.loc[ie, 'deuda_total_pendiente'] = _num(df_ec.loc[ie, 'capital_pendiente']) + _num(df_ec.loc[ie, 'interes_pendiente'])
 
         if _num(df_ec.loc[ie, 'deuda_total_pendiente']) <= 0:
             estado = 'Paz y salvo'
@@ -854,7 +866,7 @@ elif opcion_menu == "📝 Registrar Pago":
                 cred_pago = creditos_cli[creditos_cli['credito_id'] == credito_id_pago].iloc[0]
                 ec_pago = df_estado_cartera[df_estado_cartera['credito_id'] == credito_id_pago] if not df_estado_cartera.empty else pd.DataFrame()
                 fila_ec_pago = ec_pago.iloc[0] if not ec_pago.empty else None
-                interes_sug, texto_int = interes_sugerido_pago(cred_pago, fila_ec_pago)
+                interes_sug, texto_int = interes_sugerido_pago(cred_pago, fila_ec_pago, st.session_state['df_pagos'][st.session_state['df_pagos']['credito_id'] == credito_id_pago])
                 pago_interes = st.number_input("Monto destinado a Intereses:", min_value=0, max_value=int(valor_pago), value=min(int(valor_pago), interes_sug))
                 st.caption(f"💡 {texto_int} El resto del pago se abona a capital.")
                 pago_capital = valor_pago - pago_interes
